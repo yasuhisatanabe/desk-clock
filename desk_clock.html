@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Desk Clock</title>
+<style>
+  /* ===== Reset & Base ===== */
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    /* Dark theme (default) - subdued */
+    --bg: rgba(18, 18, 24, 0.85);
+    --face: rgba(24, 24, 32, 0.88);
+    --face-border: rgba(80, 80, 100, 0.25);
+    --tick-major: rgba(150, 150, 170, 0.6);
+    --tick-minor: rgba(100, 100, 120, 0.3);
+    --num-outer: rgba(140, 140, 160, 0.7);
+    --num-inner: rgba(100, 100, 120, 0.4);
+    --hand-hour: rgba(160, 160, 180, 0.8);
+    --hand-minute: rgba(130, 130, 155, 0.7);
+    --hand-second: rgba(140, 140, 160, 0.6);
+    --center-dot: rgba(140, 140, 160, 0.7);
+    --digital-color: rgba(160, 160, 180, 0.8);
+    --digital-shadow: rgba(80, 80, 120, 0.2);
+    --menu-bg: rgba(20, 20, 28, 0.96);
+    --menu-text: #a0a0b8;
+    --menu-hover: rgba(60, 60, 80, 0.4);
+    --menu-border: rgba(70, 70, 90, 0.25);
+    --menu-section: rgba(100, 100, 130, 0.45);
+    --slider-track: rgba(60, 60, 80, 0.4);
+    --slider-thumb: #505078;
+    --brand-accent: #50508a;
+  }
+
+  [data-theme="light"] {
+    --bg: rgba(210, 210, 218, 0.85);
+    --face: rgba(225, 225, 230, 0.88);
+    --face-border: rgba(150, 150, 170, 0.3);
+    --tick-major: rgba(60, 60, 80, 0.5);
+    --tick-minor: rgba(100, 100, 120, 0.25);
+    --num-outer: rgba(50, 50, 70, 0.6);
+    --num-inner: rgba(80, 80, 100, 0.4);
+    --hand-hour: rgba(50, 50, 70, 0.7);
+    --hand-minute: rgba(70, 70, 90, 0.6);
+    --hand-second: rgba(100, 80, 85, 0.5);
+    --center-dot: rgba(70, 70, 90, 0.6);
+    --digital-color: rgba(40, 40, 60, 0.7);
+    --digital-shadow: rgba(80, 80, 120, 0.1);
+    --menu-bg: rgba(230, 230, 235, 0.97);
+    --menu-text: #404058;
+    --menu-hover: rgba(100, 100, 130, 0.1);
+    --menu-border: rgba(150, 150, 170, 0.25);
+    --menu-section: rgba(80, 80, 100, 0.4);
+    --slider-track: rgba(130, 130, 160, 0.3);
+    --slider-thumb: #606088;
+    --brand-accent: #505080;
+  }
+
+  [data-theme="blue"] {
+    --bg: rgba(10, 14, 28, 0.88);
+    --face: rgba(14, 20, 40, 0.88);
+    --face-border: rgba(40, 70, 120, 0.3);
+    --tick-major: rgba(90, 120, 170, 0.6);
+    --tick-minor: rgba(60, 80, 120, 0.25);
+    --num-outer: rgba(100, 140, 190, 0.65);
+    --num-inner: rgba(60, 90, 130, 0.4);
+    --hand-hour: rgba(100, 140, 190, 0.7);
+    --hand-minute: rgba(80, 115, 165, 0.6);
+    --hand-second: rgba(70, 110, 150, 0.5);
+    --center-dot: rgba(80, 115, 165, 0.6);
+    --digital-color: rgba(100, 150, 200, 0.7);
+    --digital-shadow: rgba(30, 80, 160, 0.2);
+    --menu-bg: rgba(10, 16, 36, 0.97);
+    --menu-text: #6890b8;
+    --menu-hover: rgba(30, 60, 110, 0.3);
+    --menu-border: rgba(40, 65, 110, 0.25);
+    --menu-section: rgba(60, 95, 150, 0.4);
+    --slider-track: rgba(30, 55, 100, 0.35);
+    --slider-thumb: #2a5a90;
+    --brand-accent: #2a6090;
+  }
+
+  body {
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: #000000;
+    font-family: 'Segoe UI', 'Yu Gothic UI', 'Meiryo', sans-serif;
+    user-select: none;
+    -webkit-user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* ===== Clock Container ===== */
+  #clock-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: grab;
+  }
+
+  #clock-container:active {
+    cursor: grabbing;
+  }
+
+  #clock-container.analog-mode {
+    width: min(90vw, 90vh);
+    height: min(90vw, 90vh);
+    min-width: 120px;
+    min-height: 120px;
+  }
+
+  #clock-container.digital-mode {
+    width: auto;
+    height: auto;
+    padding: 20px 40px;
+  }
+
+  /* ===== Analog Clock ===== */
+  #analog-clock {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  /* ===== Digital Clock ===== */
+  #digital-clock {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    border-radius: 20px;
+    padding: 30px 50px;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--face-border);
+  }
+
+  #digital-time {
+    font-size: clamp(36px, 8vw, 96px);
+    font-weight: 200;
+    letter-spacing: 0.04em;
+    color: var(--digital-color);
+    text-shadow: 0 0 20px var(--digital-shadow);
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+
+  #digital-seconds {
+    font-size: clamp(16px, 3vw, 36px);
+    font-weight: 300;
+    color: var(--hand-second);
+    margin-top: 4px;
+    opacity: 0.8;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ===== Context Menu ===== */
+  #context-menu {
+    display: none;
+    position: fixed;
+    z-index: 10000;
+    min-width: 220px;
+    background: var(--menu-bg);
+    border: 1px solid var(--menu-border);
+    border-radius: 12px;
+    padding: 6px 0;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.35), 0 2px 8px rgba(0,0,0,0.2);
+    animation: menuFadeIn 0.15s ease-out;
+    max-height: calc(100vh - 20px);
+    overflow-y: auto;
+  }
+
+  @keyframes menuFadeIn {
+    from { opacity: 0; transform: scale(0.95) translateY(-4px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+  }
+
+  .menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 16px;
+    color: var(--menu-text);
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.12s;
+    white-space: nowrap;
+  }
+
+  .menu-item:hover {
+    background: var(--menu-hover);
+  }
+
+  .menu-item.active::after {
+    content: '\2713';
+    margin-left: auto;
+    color: var(--brand-accent);
+    font-weight: 600;
+  }
+
+  .menu-separator {
+    height: 1px;
+    background: var(--menu-border);
+    margin: 4px 12px;
+  }
+
+  .menu-section-label {
+    padding: 6px 16px 3px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--menu-section);
+  }
+
+  /* Theme color dots */
+  .theme-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    flex-shrink: 0;
+  }
+
+  .theme-dot.dark { background: #1e1e2a; border-color: rgba(200,200,240,0.3); }
+  .theme-dot.light { background: #f0f0f8; border-color: rgba(100,100,150,0.3); }
+  .theme-dot.blue { background: #102040; border-color: rgba(60,130,220,0.4); }
+
+  /* Slider in menu */
+  .menu-slider-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 16px;
+  }
+
+  .menu-slider-row label {
+    font-size: 13px;
+    color: var(--menu-text);
+    min-width: 50px;
+  }
+
+  .menu-slider-row input[type="range"] {
+    flex: 1;
+    height: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--slider-track);
+    border-radius: 2px;
+    outline: none;
+  }
+
+  .menu-slider-row input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    background: var(--slider-thumb);
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+  }
+
+  .menu-slider-row input[type="range"]::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    background: var(--slider-thumb);
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+  }
+
+  .menu-slider-row .slider-value {
+    font-size: 12px;
+    color: var(--menu-section);
+    min-width: 32px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+</style>
+</head>
+<body>
+
+<div id="clock-container" class="analog-mode">
+  <canvas id="analog-clock"></canvas>
+  <div id="digital-clock">
+    <div id="digital-time">00:00</div>
+    <div id="digital-seconds">:00</div>
+  </div>
+</div>
+
+<!-- Context Menu -->
+<div id="context-menu">
+  <div class="menu-section-label">表示モード</div>
+  <div class="menu-item active" data-action="mode-analog">&#128336; アナログ</div>
+  <div class="menu-item" data-action="mode-digital">&#128290; デジタル</div>
+  <div class="menu-separator"></div>
+  <div class="menu-section-label">表示設定</div>
+  <div class="menu-item active" data-action="toggle-seconds">&#9202; 秒針を表示</div>
+  <div class="menu-separator"></div>
+  <div class="menu-section-label">カラーテーマ</div>
+  <div class="menu-item active" data-action="theme-dark"><span class="theme-dot dark"></span>ダーク</div>
+  <div class="menu-item" data-action="theme-light"><span class="theme-dot light"></span>ライト</div>
+  <div class="menu-item" data-action="theme-blue"><span class="theme-dot blue"></span>ブルー</div>
+  <div class="menu-separator"></div>
+  <div class="menu-section-label">透明度</div>
+  <div class="menu-slider-row">
+    <label>透明度</label>
+    <input type="range" id="opacity-slider" min="30" max="100" value="85">
+    <span class="slider-value" id="opacity-value">85%</span>
+  </div>
+  <div class="menu-separator"></div>
+  <div class="menu-item" data-action="reset">&#128260; 設定リセット</div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // ===== State =====
+  var STORAGE_KEY = 'desk_clock_settings';
+  var defaults = { mode: 'analog', theme: 'dark', opacity: 85, showSeconds: true };
+  var state = {};
+
+  function loadState() {
+    state = { mode: defaults.mode, theme: defaults.theme, opacity: defaults.opacity, showSeconds: defaults.showSeconds };
+    try {
+      var saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        var parsed = JSON.parse(saved);
+        if (parsed.mode) state.mode = parsed.mode;
+        if (parsed.theme) state.theme = parsed.theme;
+        if (parsed.opacity != null) state.opacity = parsed.opacity;
+        if (parsed.showSeconds != null) state.showSeconds = parsed.showSeconds;
+      }
+    } catch(e) {}
+  }
+
+  function saveState() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch(e) {}
+  }
+
+  // ===== DOM =====
+  var container = document.getElementById('clock-container');
+  var canvas = document.getElementById('analog-clock');
+  var ctx = canvas.getContext('2d');
+  var digitalClock = document.getElementById('digital-clock');
+  var digitalTime = document.getElementById('digital-time');
+  var digitalSeconds = document.getElementById('digital-seconds');
+  var menu = document.getElementById('context-menu');
+  var opacitySlider = document.getElementById('opacity-slider');
+  var opacityValue = document.getElementById('opacity-value');
+
+  // ===== Theme & Mode =====
+  function applyTheme() {
+    document.documentElement.setAttribute('data-theme', state.theme);
+    document.body.style.opacity = state.opacity / 100;
+    opacitySlider.value = state.opacity;
+    opacityValue.textContent = state.opacity + '%';
+
+    // Update menu active states
+    var themeItems = menu.querySelectorAll('[data-action^="theme-"]');
+    for (var i = 0; i < themeItems.length; i++) {
+      var el = themeItems[i];
+      if (el.dataset.action === 'theme-' + state.theme) {
+        el.classList.add('active');
+      } else {
+        el.classList.remove('active');
+      }
+    }
+    var modeItems = menu.querySelectorAll('[data-action^="mode-"]');
+    for (var j = 0; j < modeItems.length; j++) {
+      var el2 = modeItems[j];
+      if (el2.dataset.action === 'mode-' + state.mode) {
+        el2.classList.add('active');
+      } else {
+        el2.classList.remove('active');
+      }
+    }
+    // Update seconds toggle
+    var secToggle = menu.querySelector('[data-action="toggle-seconds"]');
+    if (secToggle) {
+      if (state.showSeconds) {
+        secToggle.classList.add('active');
+      } else {
+        secToggle.classList.remove('active');
+      }
+    }
+  }
+
+  function applyMode() {
+    if (state.mode === 'analog') {
+      container.className = 'analog-mode';
+      canvas.style.display = 'block';
+      digitalClock.style.display = 'none';
+      resizeCanvas();
+    } else {
+      container.className = 'digital-mode';
+      container.style.width = 'auto';
+      container.style.height = 'auto';
+      canvas.style.display = 'none';
+      digitalClock.style.display = 'flex';
+      updateDigital();
+    }
+    applyTheme();
+  }
+
+  // ===== Canvas Resize =====
+  function resizeCanvas() {
+    if (state.mode !== 'analog') return;
+    var size = Math.min(window.innerWidth, window.innerHeight) * 0.9;
+    var clampedSize = Math.max(120, size);
+    var dpr = window.devicePixelRatio || 1;
+    canvas.width = clampedSize * dpr;
+    canvas.height = clampedSize * dpr;
+    canvas.style.width = clampedSize + 'px';
+    canvas.style.height = clampedSize + 'px';
+    // Update container size to match
+    container.style.width = clampedSize + 'px';
+    container.style.height = clampedSize + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawAnalog();
+  }
+
+  // ===== Analog Clock Drawing =====
+  function getColor(varName) {
+    return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+  }
+
+  function drawAnalog() {
+    var w = canvas.width / (window.devicePixelRatio || 1);
+    var h = canvas.height / (window.devicePixelRatio || 1);
+    var cx = w / 2;
+    var cy = h / 2;
+    var r = Math.min(cx, cy) - 4;
+    var now = new Date();
+    var hours = now.getHours();
+    var minutes = now.getMinutes();
+    var seconds = now.getSeconds();
+
+    ctx.clearRect(0, 0, w, h);
+
+    // Colors
+    var cFace = getColor('--face');
+    var cBorder = getColor('--face-border');
+    var cTickMajor = getColor('--tick-major');
+    var cTickMinor = getColor('--tick-minor');
+    var cNumOuter = getColor('--num-outer');
+    var cNumInner = getColor('--num-inner');
+    var cHandHour = getColor('--hand-hour');
+    var cHandMin = getColor('--hand-minute');
+    var cHandSec = getColor('--hand-second');
+    var cCenter = getColor('--center-dot');
+
+    // Face background
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = cFace;
+    ctx.fill();
+
+    // Face border
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.strokeStyle = cBorder;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Inner ring
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 0.92, 0, Math.PI * 2);
+    ctx.strokeStyle = cBorder;
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+
+    // Tick marks
+    for (var i = 0; i < 60; i++) {
+      var angle = (i * 6 - 90) * Math.PI / 180;
+      var isMajor = i % 5 === 0;
+      var outerR = r * 0.92;
+      var innerR = isMajor ? r * 0.82 : r * 0.87;
+      var cos = Math.cos(angle);
+      var sin = Math.sin(angle);
+
+      ctx.beginPath();
+      ctx.moveTo(cx + outerR * cos, cy + outerR * sin);
+      ctx.lineTo(cx + innerR * cos, cy + innerR * sin);
+      ctx.strokeStyle = isMajor ? cTickMajor : cTickMinor;
+      ctx.lineWidth = isMajor ? 2.5 : 1;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+    }
+
+    // Hour hand
+    var hourAngle = ((hours % 12) * 30 + minutes * 0.5 - 90) * Math.PI / 180;
+    drawHand(cx, cy, hourAngle, r * 0.45, 2.5, cHandHour);
+
+    // Minute hand
+    var minAngle = (minutes * 6 + seconds * 0.1 - 90) * Math.PI / 180;
+    drawHand(cx, cy, minAngle, r * 0.65, 2.5, cHandMin);
+
+    // Second hand (conditional)
+    if (state.showSeconds) {
+      var secAngle = (seconds * 6 - 90) * Math.PI / 180;
+      drawHand(cx, cy, secAngle, r * 0.72, 1.2, cHandSec);
+
+      // Counterweight for second hand
+      var counterAngle = secAngle + Math.PI;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + r * 0.15 * Math.cos(counterAngle), cy + r * 0.15 * Math.sin(counterAngle));
+      ctx.strokeStyle = cHandSec;
+      ctx.lineWidth = 1.2;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+    }
+
+    // Center dot
+    ctx.beginPath();
+    ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+    ctx.fillStyle = cCenter;
+    ctx.fill();
+
+    // Inner center
+    ctx.beginPath();
+    ctx.arc(cx, cy, 2, 0, Math.PI * 2);
+    ctx.fillStyle = cFace;
+    ctx.fill();
+  }
+
+  function drawHand(cx, cy, angle, length, width, color) {
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + length * Math.cos(angle), cy + length * Math.sin(angle));
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+  }
+
+  // ===== Digital Clock =====
+  function updateDigital() {
+    var now = new Date();
+    var h = String(now.getHours()).padStart(2, '0');
+    var m = String(now.getMinutes()).padStart(2, '0');
+    var s = String(now.getSeconds()).padStart(2, '0');
+    digitalTime.textContent = h + ':' + m;
+    if (state.showSeconds) {
+      digitalSeconds.textContent = ':' + s;
+      digitalSeconds.style.display = 'block';
+    } else {
+      digitalSeconds.style.display = 'none';
+    }
+  }
+
+  // ===== Tick =====
+  function tick() {
+    if (state.mode === 'analog') {
+      drawAnalog();
+    } else {
+      updateDigital();
+    }
+  }
+
+  // ===== Context Menu =====
+  document.addEventListener('contextmenu', function(e) {
+    e.preventDefault();
+    menu.style.display = 'block';
+    menu.style.left = '0px';
+    menu.style.top = '0px';
+    var menuW = menu.offsetWidth || 220;
+    var menuH = menu.offsetHeight || 300;
+    var x = Math.max(10, Math.min(e.clientX, window.innerWidth - menuW - 10));
+    var y = Math.max(10, Math.min(e.clientY, window.innerHeight - menuH - 10));
+    menu.style.left = x + 'px';
+    menu.style.top = y + 'px';
+  });
+
+  // Double click anywhere on clock to quickly toggle mode
+  container.addEventListener('dblclick', function(e) {
+    if (e.target.closest('#context-menu')) return;
+    state.mode = (state.mode === 'analog') ? 'digital' : 'analog';
+    applyMode();
+    saveState();
+    tick();
+  });
+
+  document.addEventListener('click', function(e) {
+    if (!menu.contains(e.target)) {
+      menu.style.display = 'none';
+    }
+  });
+
+  menu.addEventListener('click', function(e) {
+    var item = e.target.closest('.menu-item');
+    if (!item) return;
+    var action = item.dataset.action;
+    if (!action) return;
+
+    if (action === 'mode-analog') {
+      state.mode = 'analog';
+      applyMode();
+    } else if (action === 'mode-digital') {
+      state.mode = 'digital';
+      applyMode();
+    } else if (action === 'toggle-seconds') {
+      state.showSeconds = !state.showSeconds;
+      applyTheme();
+    } else if (action.indexOf('theme-') === 0) {
+      state.theme = action.replace('theme-', '');
+      applyTheme();
+    } else if (action === 'reset') {
+      state.mode = defaults.mode;
+      state.theme = defaults.theme;
+      state.opacity = defaults.opacity;
+      state.showSeconds = defaults.showSeconds;
+      applyMode();
+    }
+
+    saveState();
+    tick();
+
+    setTimeout(function() { menu.style.display = 'none'; }, 120);
+  });
+
+  // Opacity slider
+  opacitySlider.addEventListener('input', function() {
+    state.opacity = parseInt(this.value);
+    opacityValue.textContent = state.opacity + '%';
+    document.body.style.opacity = state.opacity / 100;
+    saveState();
+  });
+
+  // Prevent menu close on slider interaction
+  opacitySlider.addEventListener('click', function(e) { e.stopPropagation(); });
+  opacitySlider.addEventListener('mousedown', function(e) { e.stopPropagation(); });
+
+  // ===== Drag =====
+  var isDragging = false;
+  var dragStartX, dragStartY, elStartX, elStartY;
+
+  container.addEventListener('mousedown', function(e) {
+    if (e.button !== 0) return;
+    isDragging = true;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    var rect = container.getBoundingClientRect();
+    elStartX = rect.left;
+    elStartY = rect.top;
+    container.style.position = 'fixed';
+    container.style.left = elStartX + 'px';
+    container.style.top = elStartY + 'px';
+    container.style.margin = '0';
+    document.body.style.display = 'block';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', function(e) {
+    if (!isDragging) return;
+    var dx = e.clientX - dragStartX;
+    var dy = e.clientY - dragStartY;
+    container.style.left = (elStartX + dx) + 'px';
+    container.style.top = (elStartY + dy) + 'px';
+  });
+
+  document.addEventListener('mouseup', function() {
+    isDragging = false;
+  });
+
+  // ===== Window Resize =====
+  window.addEventListener('resize', function() {
+    if (state.mode === 'analog') {
+      resizeCanvas();
+      drawAnalog();
+    }
+  });
+
+  // ===== Init =====
+  loadState();
+  applyMode();
+  tick();
+  setInterval(tick, 1000);
+
+})();
+</script>
+</body>
+</html>
