@@ -316,9 +316,9 @@ function Apply-Mode {
     } else {
         $analogCanvas.Visibility = "Collapsed"
         $digitalBorder.Visibility = "Visible"
-        $digitalBorder.Background = Get-BrushFromHex $theme.Face
-        $digitalBorder.BorderBrush = Get-BrushFromHex $theme.FaceBorder
-        $digitalBorder.BorderThickness = New-Object System.Windows.Thickness(1)
+        $digitalBorder.Background = [System.Windows.Media.Brushes]::Transparent
+        $digitalBorder.BorderBrush = [System.Windows.Media.Brushes]::Transparent
+        $digitalBorder.BorderThickness = New-Object System.Windows.Thickness(0)
         $digitalTime.Foreground = Get-BrushFromHex $theme.DigitalColor
         $digitalTime.FontSize = $script:Settings.DigitalSize
     }
