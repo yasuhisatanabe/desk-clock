@@ -1,12 +1,20 @@
 @echo off
-REM Desk Clock - デバッグ起動用バッチ
-REM エラーがある場合に画面に表示して一時停止します
-
+setlocal
 cd /d "%~dp0"
-echo [Desk Clock 起動テスト]
-powershell -NoProfile -ExecutionPolicy Bypass -STA -File "%~dp0desk_clock.ps1"
-if %ERRORLEVEL% NEQ 0 (
-    echo.
-    echo 起動時にエラーが発生しました。上記のエラーメッセージをご確認ください。
-)
+
+echo ========================================
+echo   Desk Clock - Debug Launcher
+echo ========================================
+echo.
+
+set "PS_PATH=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
+if not exist "%PS_PATH%" set "PS_PATH=powershell.exe"
+
+echo Launching PowerShell script...
+"%PS_PATH%" -NoProfile -ExecutionPolicy Bypass -STA -File "%~dp0desk_clock.ps1"
+
+echo.
+echo ========================================
+echo Script finished with exit code: %ERRORLEVEL%
+echo ========================================
 pause

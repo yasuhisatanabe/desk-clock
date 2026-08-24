@@ -48,7 +48,9 @@
 ### 2. PowerShell + WPF版 (`desk_clock.ps1` / `start_clock.bat`)
 Windows デスクトップ専用のネイティブ版です。
 
-- **起動**: `start_clock.bat` をダブルクリックします。
+- **起動方法（いずれか1つ）**:
+  - `start_clock.bat` をダブルクリック
+  - `start_clock.vbs` をダブルクリック（黒い画面が一瞬も出ない完全サイレント起動）
 - **デバッグ起動**: もし起動しない場合は `debug_clock.bat` を実行するとエラーメッセージを確認できます。
 - **特徴**:
   - 枠なし・完全透過ウィンドウ
@@ -66,8 +68,9 @@ Windows デスクトップ専用のネイティブ版です。
 DESK_CLOCK/
 ├── desk_clock.html   # HTML版 単一ファイル
 ├── desk_clock.ps1    # PowerShell + WPF版 スクリプト
-├── start_clock.bat   # PowerShell版 起動用バッチファイル
-├── debug_clock.bat   # PowerShell版 エラー確認用バッチファイル
+├── start_clock.bat   # 起動用バッチファイル (CMD)
+├── start_clock.vbs   # 起動用VBScript (黒画面なし)
+├── debug_clock.bat   # エラー確認用バッチファイル
 └── README.md         # 本説明ファイル
 ```
 
