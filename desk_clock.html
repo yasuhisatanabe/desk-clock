@@ -313,6 +313,16 @@
       <input type="range" id="min-len-slider" min="30" max="90" step="5" value="65">
       <span class="slider-value" id="min-len-val">65%</span>
     </div>
+    <div class="menu-slider-row">
+      <label>秒針 太さ</label>
+      <input type="range" id="sec-width-slider" min="0.5" max="5" step="0.5" value="1.5">
+      <span class="slider-value" id="sec-width-val">1.5px</span>
+    </div>
+    <div class="menu-slider-row">
+      <label>秒針 長さ</label>
+      <input type="range" id="sec-len-slider" min="30" max="95" step="5" value="72">
+      <span class="slider-value" id="sec-len-val">72%</span>
+    </div>
     <div class="menu-separator"></div>
   </div>
   <!-- Digital Specific Settings -->
@@ -355,6 +365,8 @@
     hourLength: 45,
     minuteWidth: 4.0,
     minuteLength: 65,
+    secondWidth: 1.5,
+    secondLength: 72,
     digitalSize: 64
   };
   var state = {};
@@ -373,6 +385,8 @@
         if (parsed.hourLength != null) state.hourLength = parseInt(parsed.hourLength);
         if (parsed.minuteWidth != null) state.minuteWidth = parseFloat(parsed.minuteWidth);
         if (parsed.minuteLength != null) state.minuteLength = parseInt(parsed.minuteLength);
+        if (parsed.secondWidth != null) state.secondWidth = parseFloat(parsed.secondWidth);
+        if (parsed.secondLength != null) state.secondLength = parseInt(parsed.secondLength);
         if (parsed.digitalSize != null) state.digitalSize = parseInt(parsed.digitalSize);
       }
     } catch(e) {}
@@ -401,6 +415,10 @@
   var minWidthVal = document.getElementById('min-width-val');
   var minLenSlider = document.getElementById('min-len-slider');
   var minLenVal = document.getElementById('min-len-val');
+  var secWidthSlider = document.getElementById('sec-width-slider');
+  var secWidthVal = document.getElementById('sec-width-val');
+  var secLenSlider = document.getElementById('sec-len-slider');
+  var secLenVal = document.getElementById('sec-len-val');
   var digitalSizeSlider = document.getElementById('digital-size-slider');
   var digitalSizeVal = document.getElementById('digital-size-val');
 
@@ -420,6 +438,10 @@
     minWidthVal.textContent = state.minuteWidth + 'px';
     minLenSlider.value = state.minuteLength;
     minLenVal.textContent = state.minuteLength + '%';
+    secWidthSlider.value = state.secondWidth;
+    secWidthVal.textContent = state.secondWidth + 'px';
+    secLenSlider.value = state.secondLength;
+    secLenVal.textContent = state.secondLength + '%';
     digitalSizeSlider.value = state.digitalSize;
     digitalSizeVal.textContent = state.digitalSize + 'px';
     digitalTime.style.fontSize = state.digitalSize + 'px';
@@ -579,7 +601,8 @@
     // Second hand (conditional)
     if (state.showSeconds) {
       var secAngle = (seconds * 6 - 90) * Math.PI / 180;
-      drawHand(cx, cy, secAngle, r * 0.72, 1.2, cHandSec);
+      var sLen = r * (state.secondLength / 100);
+      drawHand(cx, cy, secAngle, sLen, state.secondWidth, cHandSec);
 
       // Counterweight for second hand
       var counterAngle = secAngle + Math.PI;
@@ -587,7 +610,7 @@
       ctx.moveTo(cx, cy);
       ctx.lineTo(cx + r * 0.15 * Math.cos(counterAngle), cy + r * 0.15 * Math.sin(counterAngle));
       ctx.strokeStyle = cHandSec;
-      ctx.lineWidth = 1.2;
+      ctx.lineWidth = state.secondWidth;
       ctx.lineCap = 'round';
       ctx.stroke();
     }
@@ -719,6 +742,14 @@
   });
 
   bindSlider(minLenSlider, minLenVal, '%', 'minuteLength', function() {
+    if (state.mode === 'analog') drawAnalog();
+  });
+
+  bindSlider(secWidthSlider, secWidthVal, 'px', 'secondWidth', function() {
+    if (state.mode === 'analog') drawAnalog();
+  });
+
+  bindSlider(secLenSlider, secLenVal, '%', 'secondLength', function() {
     if (state.mode === 'analog') drawAnalog();
   });
 

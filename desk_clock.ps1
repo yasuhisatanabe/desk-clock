@@ -21,6 +21,8 @@ $script:Settings = @{
     HourLength   = 45
     MinuteWidth  = 4.0
     MinuteLength = 65
+    SecondWidth  = 1.5
+    SecondLength = 72
     DigitalSize  = 64
     Width        = 300
     Height       = 300
@@ -78,6 +80,8 @@ function Load-Settings {
             if ($null -ne $json.HourLength) { $script:Settings.HourLength = [int]$json.HourLength }
             if ($null -ne $json.MinuteWidth) { $script:Settings.MinuteWidth = [double]$json.MinuteWidth }
             if ($null -ne $json.MinuteLength) { $script:Settings.MinuteLength = [int]$json.MinuteLength }
+            if ($null -ne $json.SecondWidth) { $script:Settings.SecondWidth = [double]$json.SecondWidth }
+            if ($null -ne $json.SecondLength) { $script:Settings.SecondLength = [int]$json.SecondLength }
             if ($null -ne $json.DigitalSize) { $script:Settings.DigitalSize = [double]$json.DigitalSize }
             if ($null -ne $json.Width) { $script:Settings.Width = [int]$json.Width }
             if ($null -ne $json.Height) { $script:Settings.Height = [int]$json.Height }
@@ -253,12 +257,13 @@ function Draw-AnalogClock {
     # Second hand (conditional)
     if ($script:Settings.ShowSeconds) {
         $secAngle = ($seconds * 6 - 90) * [Math]::PI / 180.0
+        $sLen = $r * ($script:Settings.SecondLength / 100.0)
         $sLine = New-Object System.Windows.Shapes.Line
         $sLine.X1 = $cx; $sLine.Y1 = $cy
-        $sLine.X2 = $cx + $r * 0.72 * [Math]::Cos($secAngle)
-        $sLine.Y2 = $cy + $r * 0.72 * [Math]::Sin($secAngle)
+        $sLine.X2 = $cx + $sLen * [Math]::Cos($secAngle)
+        $sLine.Y2 = $cy + $sLen * [Math]::Sin($secAngle)
         $sLine.Stroke = Get-BrushFromHex $theme.HandSecond
-        $sLine.StrokeThickness = 1.2
+        $sLine.StrokeThickness = $script:Settings.SecondWidth
         $sLine.StrokeStartLineCap = "Round"
         $sLine.StrokeEndLineCap = "Round"
         $analogCanvas.Children.Add($sLine) | Out-Null
@@ -270,7 +275,7 @@ function Draw-AnalogClock {
         $cLine.X2 = $cx + $r * 0.15 * [Math]::Cos($counterAngle)
         $cLine.Y2 = $cy + $r * 0.15 * [Math]::Sin($counterAngle)
         $cLine.Stroke = Get-BrushFromHex $theme.HandSecond
-        $cLine.StrokeThickness = 1.2
+        $cLine.StrokeThickness = $script:Settings.SecondWidth
         $cLine.StrokeStartLineCap = "Round"
         $cLine.StrokeEndLineCap = "Round"
         $analogCanvas.Children.Add($cLine) | Out-Null
@@ -414,6 +419,28 @@ foreach ($opt in @(@{L="短め (55%)";V=55}, @{L="標準 (65%)";V=65}, @{L="長�
 }
 $menuHands.Items.Add($subML) | Out-Null
 
+# 秒針 太さ
+$subSW = New-Object System.Windows.Controls.MenuItem
+$subSW.Header = "秒針 太さ"
+foreach ($opt in @(@{L="極細 (1.0px)";V=1.0}, @{L="標準 (1.5px)";V=1.5}, @{L="太め (2.5px)";V=2.5}, @{L="極太 (4.0px)";V=4.0})) {
+    $item = New-Object System.Windows.Controls.MenuItem
+    $item.Header = $opt.L; $item.Tag = $opt.V
+    $item.Add_Click({ param($s,$e) $script:Settings.SecondWidth = [double]$s.Tag; Tick-Handler; Save-Settings })
+    $subSW.Items.Add($item) | Out-Null
+}
+$menuHands.Items.Add($subSW) | Out-Null
+
+# 秒針 長さ
+$subSL = New-Object System.Windows.Controls.MenuItem
+$subSL.Header = "秒針 長さ"
+foreach ($opt in @(@{L="短め (60%)";V=60}, @{L="標準 (72%)";V=72}, @{L="長め (85%)";V=85})) {
+    $item = New-Object System.Windows.Controls.MenuItem
+    $item.Header = $opt.L; $item.Tag = $opt.V
+    $item.Add_Click({ param($s,$e) $script:Settings.SecondLength = [int]$s.Tag; Tick-Handler; Save-Settings })
+    $subSL.Items.Add($item) | Out-Null
+}
+$menuHands.Items.Add($subSL) | Out-Null
+
 $contextMenu.Items.Add($menuHands) | Out-Null
 
 # --- デジタル文字サイズ ---
@@ -485,10 +512,12 @@ $menuReset.Add_Click({
     $script:Settings.Theme = "dark"
     $script:Settings.Opacity = 0.85
     $script:Settings.ShowSeconds = $true
-    $script:Settings.HourWidth = 2.5
+    $script:Settings.HourWidth = 4.0
     $script:Settings.HourLength = 45
-    $script:Settings.MinuteWidth = 2.5
+    $script:Settings.MinuteWidth = 4.0
     $script:Settings.MinuteLength = 65
+    $script:Settings.SecondWidth = 1.5
+    $script:Settings.SecondLength = 72
     $script:Settings.DigitalSize = 64
     if ($script:menuSeconds) { $script:menuSeconds.IsChecked = $true }
     Apply-Mode
