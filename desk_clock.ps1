@@ -280,24 +280,6 @@ function Draw-AnalogClock {
         $cLine.StrokeEndLineCap = "Round"
         $analogCanvas.Children.Add($cLine) | Out-Null
     }
-
-    # Center dot
-    $centerDot = New-Object System.Windows.Shapes.Ellipse
-    $centerDot.Width = 13
-    $centerDot.Height = 13
-    $centerDot.Fill = Get-BrushFromHex $theme.CenterDot
-    [System.Windows.Controls.Canvas]::SetLeft($centerDot, $cx - 6.5)
-    [System.Windows.Controls.Canvas]::SetTop($centerDot, $cy - 6.5)
-    $analogCanvas.Children.Add($centerDot) | Out-Null
-
-    # Inner center dot
-    $innerDot = New-Object System.Windows.Shapes.Ellipse
-    $innerDot.Width = 5
-    $innerDot.Height = 5
-    $innerDot.Fill = Get-BrushFromHex $theme.Face
-    [System.Windows.Controls.Canvas]::SetLeft($innerDot, $cx - 2.5)
-    [System.Windows.Controls.Canvas]::SetTop($innerDot, $cy - 2.5)
-    $analogCanvas.Children.Add($innerDot) | Out-Null
 }
 
 # ===== デジタル時計更新 =====
