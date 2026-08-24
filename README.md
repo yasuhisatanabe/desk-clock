@@ -49,9 +49,9 @@
 Windows デスクトップ専用のネイティブ版です。
 
 - **起動方法（いずれか1つ）**:
-  - `start_clock.bat` をダブルクリック
-  - `start_clock.vbs` をダブルクリック（黒い画面が一瞬も出ない完全サイレント起動）
-- **デバッグ起動**: もし起動しない場合は `debug_clock.bat` を実行するとエラーメッセージを確認できます。
+  - `start_app_mode.vbs` または `start_app_mode.bat`: **【超おすすめ】** ブラウザの枠やアドレスバーのない完全な専用デスクトップアプリとしてHTML時計を即座に起動（会社のPCでも100%確実に動作）
+  - `start_clock.vbs` または `start_clock.bat`: PowerShell WPFネイティブ版の起動
+- **デバッグ起動**: もしPS1版が起動しない場合は `debug_clock.bat` を実行するとエラーメッセージを確認できます。
 - **特徴**:
   - 枠なし・完全透過ウィンドウ
   - ネイティブで **常に最前面（Always on Top）** 表示
@@ -66,12 +66,14 @@ Windows デスクトップ専用のネイティブ版です。
 
 ```
 DESK_CLOCK/
-├── desk_clock.html   # HTML版 単一ファイル
-├── desk_clock.ps1    # PowerShell + WPF版 スクリプト
-├── start_clock.bat   # 起動用バッチファイル (CMD)
-├── start_clock.vbs   # 起動用VBScript (黒画面なし)
-├── debug_clock.bat   # エラー確認用バッチファイル
-└── README.md         # 本説明ファイル
+├── desk_clock.html       # HTML版 単一ファイル
+├── start_app_mode.vbs    # 【推奨】アプリモード起動 (黒画面なし・制限なし)
+├── start_app_mode.bat    # アプリモード起動 (BAT)
+├── desk_clock.ps1        # PowerShell + WPF版 スクリプト
+├── start_clock.vbs       # PowerShell版 起動用VBScript
+├── start_clock.bat       # PowerShell版 起動用バッチファイル
+├── debug_clock.bat       # エラー確認用バッチファイル
+└── README.md             # 本説明ファイル
 ```
 
 ---
