@@ -234,9 +234,9 @@
   }
 
   .menu-slider-row label {
-    font-size: 13px;
+    font-size: 12px;
     color: var(--menu-text);
-    min-width: 50px;
+    min-width: 68px;
   }
 
   .menu-slider-row input[type="range"] {
@@ -296,6 +296,41 @@
   <div class="menu-section-label">表示設定</div>
   <div class="menu-item active" data-action="toggle-seconds">&#9202; 秒針を表示</div>
   <div class="menu-separator"></div>
+  <!-- Analog Specific Settings -->
+  <div id="analog-settings-group">
+    <div class="menu-section-label">針の設定</div>
+    <div class="menu-slider-row">
+      <label>時針 太さ</label>
+      <input type="range" id="hour-width-slider" min="1" max="8" step="0.5" value="2.5">
+      <span class="slider-value" id="hour-width-val">2.5px</span>
+    </div>
+    <div class="menu-slider-row">
+      <label>時針 長さ</label>
+      <input type="range" id="hour-len-slider" min="20" max="70" step="5" value="45">
+      <span class="slider-value" id="hour-len-val">45%</span>
+    </div>
+    <div class="menu-slider-row">
+      <label>分針 太さ</label>
+      <input type="range" id="min-width-slider" min="1" max="8" step="0.5" value="2.5">
+      <span class="slider-value" id="min-width-val">2.5px</span>
+    </div>
+    <div class="menu-slider-row">
+      <label>分針 長さ</label>
+      <input type="range" id="min-len-slider" min="30" max="90" step="5" value="65">
+      <span class="slider-value" id="min-len-val">65%</span>
+    </div>
+    <div class="menu-separator"></div>
+  </div>
+  <!-- Digital Specific Settings -->
+  <div id="digital-settings-group" style="display:none;">
+    <div class="menu-section-label">デジタル設定</div>
+    <div class="menu-slider-row">
+      <label>文字サイズ</label>
+      <input type="range" id="digital-size-slider" min="28" max="140" step="4" value="64">
+      <span class="slider-value" id="digital-size-val">64px</span>
+    </div>
+    <div class="menu-separator"></div>
+  </div>
   <div class="menu-section-label">カラーテーマ</div>
   <div class="menu-item active" data-action="theme-dark"><span class="theme-dot dark"></span>ダーク</div>
   <div class="menu-item" data-action="theme-light"><span class="theme-dot light"></span>ライト</div>
@@ -317,11 +352,21 @@
 
   // ===== State =====
   var STORAGE_KEY = 'desk_clock_settings';
-  var defaults = { mode: 'analog', theme: 'dark', opacity: 85, showSeconds: true };
+  var defaults = {
+    mode: 'analog',
+    theme: 'dark',
+    opacity: 85,
+    showSeconds: true,
+    hourWidth: 2.5,
+    hourLength: 45,
+    minuteWidth: 2.5,
+    minuteLength: 65,
+    digitalSize: 64
+  };
   var state = {};
 
   function loadState() {
-    state = { mode: defaults.mode, theme: defaults.theme, opacity: defaults.opacity, showSeconds: defaults.showSeconds };
+    state = Object.assign({}, defaults);
     try {
       var saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
@@ -330,6 +375,11 @@
         if (parsed.theme) state.theme = parsed.theme;
         if (parsed.opacity != null) state.opacity = parsed.opacity;
         if (parsed.showSeconds != null) state.showSeconds = parsed.showSeconds;
+        if (parsed.hourWidth != null) state.hourWidth = parseFloat(parsed.hourWidth);
+        if (parsed.hourLength != null) state.hourLength = parseInt(parsed.hourLength);
+        if (parsed.minuteWidth != null) state.minuteWidth = parseFloat(parsed.minuteWidth);
+        if (parsed.minuteLength != null) state.minuteLength = parseInt(parsed.minuteLength);
+        if (parsed.digitalSize != null) state.digitalSize = parseInt(parsed.digitalSize);
       }
     } catch(e) {}
   }
@@ -347,6 +397,18 @@
   var menu = document.getElementById('context-menu');
   var opacitySlider = document.getElementById('opacity-slider');
   var opacityValue = document.getElementById('opacity-value');
+  var analogGroup = document.getElementById('analog-settings-group');
+  var digitalGroup = document.getElementById('digital-settings-group');
+  var hourWidthSlider = document.getElementById('hour-width-slider');
+  var hourWidthVal = document.getElementById('hour-width-val');
+  var hourLenSlider = document.getElementById('hour-len-slider');
+  var hourLenVal = document.getElementById('hour-len-val');
+  var minWidthSlider = document.getElementById('min-width-slider');
+  var minWidthVal = document.getElementById('min-width-val');
+  var minLenSlider = document.getElementById('min-len-slider');
+  var minLenVal = document.getElementById('min-len-val');
+  var digitalSizeSlider = document.getElementById('digital-size-slider');
+  var digitalSizeVal = document.getElementById('digital-size-val');
 
   // ===== Theme & Mode =====
   function applyTheme() {
@@ -354,6 +416,28 @@
     document.body.style.opacity = state.opacity / 100;
     opacitySlider.value = state.opacity;
     opacityValue.textContent = state.opacity + '%';
+
+    // Update hand sliders UI
+    hourWidthSlider.value = state.hourWidth;
+    hourWidthVal.textContent = state.hourWidth + 'px';
+    hourLenSlider.value = state.hourLength;
+    hourLenVal.textContent = state.hourLength + '%';
+    minWidthSlider.value = state.minuteWidth;
+    minWidthVal.textContent = state.minuteWidth + 'px';
+    minLenSlider.value = state.minuteLength;
+    minLenVal.textContent = state.minuteLength + '%';
+    digitalSizeSlider.value = state.digitalSize;
+    digitalSizeVal.textContent = state.digitalSize + 'px';
+    digitalTime.style.fontSize = state.digitalSize + 'px';
+
+    // Toggle menu group visibility by mode
+    if (state.mode === 'analog') {
+      analogGroup.style.display = 'block';
+      digitalGroup.style.display = 'none';
+    } else {
+      analogGroup.style.display = 'none';
+      digitalGroup.style.display = 'block';
+    }
 
     // Update menu active states
     var themeItems = menu.querySelectorAll('[data-action^="theme-"]');
@@ -397,6 +481,7 @@
       container.style.height = 'auto';
       canvas.style.display = 'none';
       digitalClock.style.display = 'flex';
+      digitalTime.style.fontSize = state.digitalSize + 'px';
       updateDigital();
     }
     applyTheme();
@@ -489,11 +574,13 @@
 
     // Hour hand
     var hourAngle = ((hours % 12) * 30 + minutes * 0.5 - 90) * Math.PI / 180;
-    drawHand(cx, cy, hourAngle, r * 0.45, 2.5, cHandHour);
+    var hLen = r * (state.hourLength / 100);
+    drawHand(cx, cy, hourAngle, hLen, state.hourWidth, cHandHour);
 
     // Minute hand
     var minAngle = (minutes * 6 + seconds * 0.1 - 90) * Math.PI / 180;
-    drawHand(cx, cy, minAngle, r * 0.65, 2.5, cHandMin);
+    var mLen = r * (state.minuteLength / 100);
+    drawHand(cx, cy, minAngle, mLen, state.minuteWidth, cHandMin);
 
     // Second hand (conditional)
     if (state.showSeconds) {
@@ -599,10 +686,7 @@
       state.theme = action.replace('theme-', '');
       applyTheme();
     } else if (action === 'reset') {
-      state.mode = defaults.mode;
-      state.theme = defaults.theme;
-      state.opacity = defaults.opacity;
-      state.showSeconds = defaults.showSeconds;
+      state = Object.assign({}, defaults);
       applyMode();
     }
 
@@ -612,17 +696,41 @@
     setTimeout(function() { menu.style.display = 'none'; }, 120);
   });
 
-  // Opacity slider
-  opacitySlider.addEventListener('input', function() {
-    state.opacity = parseInt(this.value);
-    opacityValue.textContent = state.opacity + '%';
+  // Slider handlers
+  function bindSlider(slider, valEl, unit, stateKey, onChange) {
+    slider.addEventListener('input', function() {
+      state[stateKey] = (unit === 'px' && slider.step && slider.step.indexOf('.') !== -1) ? parseFloat(this.value) : parseInt(this.value);
+      valEl.textContent = this.value + unit;
+      if (onChange) onChange();
+      saveState();
+    });
+    slider.addEventListener('click', function(e) { e.stopPropagation(); });
+    slider.addEventListener('mousedown', function(e) { e.stopPropagation(); });
+  }
+
+  bindSlider(opacitySlider, opacityValue, '%', 'opacity', function() {
     document.body.style.opacity = state.opacity / 100;
-    saveState();
   });
 
-  // Prevent menu close on slider interaction
-  opacitySlider.addEventListener('click', function(e) { e.stopPropagation(); });
-  opacitySlider.addEventListener('mousedown', function(e) { e.stopPropagation(); });
+  bindSlider(hourWidthSlider, hourWidthVal, 'px', 'hourWidth', function() {
+    if (state.mode === 'analog') drawAnalog();
+  });
+
+  bindSlider(hourLenSlider, hourLenVal, '%', 'hourLength', function() {
+    if (state.mode === 'analog') drawAnalog();
+  });
+
+  bindSlider(minWidthSlider, minWidthVal, 'px', 'minuteWidth', function() {
+    if (state.mode === 'analog') drawAnalog();
+  });
+
+  bindSlider(minLenSlider, minLenVal, '%', 'minuteLength', function() {
+    if (state.mode === 'analog') drawAnalog();
+  });
+
+  bindSlider(digitalSizeSlider, digitalSizeVal, 'px', 'digitalSize', function() {
+    digitalTime.style.fontSize = state.digitalSize + 'px';
+  });
 
   // ===== Drag =====
   var isDragging = false;

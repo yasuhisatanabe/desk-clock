@@ -16,14 +16,19 @@ $settingsFile = Join-Path $settingsDir "settings.json"
 
 # ===== デフォルト設定 =====
 $script:Settings = @{
-    Mode        = "analog"
-    Theme       = "dark"
-    Opacity     = 0.85
-    ShowSeconds = $true
-    Width       = 300
-    Height      = 300
-    Left        = -1
-    Top         = -1
+    Mode         = "analog"
+    Theme        = "dark"
+    Opacity      = 0.85
+    ShowSeconds  = $true
+    HourWidth    = 2.5
+    HourLength   = 45
+    MinuteWidth  = 2.5
+    MinuteLength = 65
+    DigitalSize  = 64
+    Width        = 300
+    Height       = 300
+    Left         = -1
+    Top          = -1
 }
 
 # ===== テーマ定義 =====
@@ -90,6 +95,11 @@ function Load-Settings {
             if ($json.Theme) { $script:Settings.Theme = $json.Theme }
             if ($null -ne $json.Opacity) { $script:Settings.Opacity = [double]$json.Opacity }
             if ($null -ne $json.ShowSeconds) { $script:Settings.ShowSeconds = [bool]$json.ShowSeconds }
+            if ($null -ne $json.HourWidth) { $script:Settings.HourWidth = [double]$json.HourWidth }
+            if ($null -ne $json.HourLength) { $script:Settings.HourLength = [int]$json.HourLength }
+            if ($null -ne $json.MinuteWidth) { $script:Settings.MinuteWidth = [double]$json.MinuteWidth }
+            if ($null -ne $json.MinuteLength) { $script:Settings.MinuteLength = [int]$json.MinuteLength }
+            if ($null -ne $json.DigitalSize) { $script:Settings.DigitalSize = [double]$json.DigitalSize }
             if ($null -ne $json.Width) { $script:Settings.Width = [int]$json.Width }
             if ($null -ne $json.Height) { $script:Settings.Height = [int]$json.Height }
             if ($null -ne $json.Left) { $script:Settings.Left = [double]$json.Left }
@@ -253,24 +263,26 @@ function Draw-AnalogClock {
 
     # Hour hand
     $hourAngle = (($hours % 12) * 30 + $minutes * 0.5 - 90) * [Math]::PI / 180
+    $hLen = $r * ($script:Settings.HourLength / 100.0)
     $hLine = New-Object System.Windows.Shapes.Line
     $hLine.X1 = $cx; $hLine.Y1 = $cy
-    $hLine.X2 = $cx + $r * 0.45 * [Math]::Cos($hourAngle)
-    $hLine.Y2 = $cy + $r * 0.45 * [Math]::Sin($hourAngle)
+    $hLine.X2 = $cx + $hLen * [Math]::Cos($hourAngle)
+    $hLine.Y2 = $cy + $hLen * [Math]::Sin($hourAngle)
     $hLine.Stroke = Get-BrushFromHex $theme.HandHour
-    $hLine.StrokeThickness = 2.5
+    $hLine.StrokeThickness = $script:Settings.HourWidth
     $hLine.StrokeStartLineCap = "Round"
     $hLine.StrokeEndLineCap = "Round"
     $analogCanvas.Children.Add($hLine) | Out-Null
 
     # Minute hand
     $minAngle = ($minutes * 6 + $seconds * 0.1 - 90) * [Math]::PI / 180
+    $mLen = $r * ($script:Settings.MinuteLength / 100.0)
     $mLine = New-Object System.Windows.Shapes.Line
     $mLine.X1 = $cx; $mLine.Y1 = $cy
-    $mLine.X2 = $cx + $r * 0.65 * [Math]::Cos($minAngle)
-    $mLine.Y2 = $cy + $r * 0.65 * [Math]::Sin($minAngle)
+    $mLine.X2 = $cx + $mLen * [Math]::Cos($minAngle)
+    $mLine.Y2 = $cy + $mLen * [Math]::Sin($minAngle)
     $mLine.Stroke = Get-BrushFromHex $theme.HandMinute
-    $mLine.StrokeThickness = 2.5
+    $mLine.StrokeThickness = $script:Settings.MinuteWidth
     $mLine.StrokeStartLineCap = "Round"
     $mLine.StrokeEndLineCap = "Round"
     $analogCanvas.Children.Add($mLine) | Out-Null
@@ -340,6 +352,7 @@ function Apply-Mode {
         $digitalBorder.BorderBrush = Get-BrushFromHex $theme.FaceBorder
         $digitalBorder.BorderThickness = New-Object System.Windows.Thickness(1)
         $digitalTime.Foreground = Get-BrushFromHex $theme.DigitalColor
+        $digitalTime.FontSize = $script:Settings.DigitalSize
     }
 
     $window.Opacity = $script:Settings.Opacity
@@ -403,6 +416,69 @@ $script:menuSeconds.Add_Click({
     Save-Settings
 })
 $contextMenu.Items.Add($script:menuSeconds) | Out-Null
+
+$contextMenu.Items.Add((New-Object System.Windows.Controls.Separator)) | Out-Null
+
+# --- 針・文字サイズ設定サブメニュー ---
+$menuHands = New-Object System.Windows.Controls.MenuItem
+$menuHands.Header = "📏 針の設定"
+
+# 時針 太さ
+$subHW = New-Object System.Windows.Controls.MenuItem
+$subHW.Header = "時針 太さ"
+foreach ($opt in @(@{L="極細 (1.5px)";V=1.5}, @{L="標準 (2.5px)";V=2.5}, @{L="太め (4.0px)";V=4.0}, @{L="極太 (6.0px)";V=6.0})) {
+    $item = New-Object System.Windows.Controls.MenuItem
+    $item.Header = $opt.L; $item.Tag = $opt.V
+    $item.Add_Click({ param($s,$e) $script:Settings.HourWidth = [double]$s.Tag; Tick-Handler; Save-Settings })
+    $subHW.Items.Add($item) | Out-Null
+}
+$menuHands.Items.Add($subHW) | Out-Null
+
+# 時針 長さ
+$subHL = New-Object System.Windows.Controls.MenuItem
+$subHL.Header = "時針 長さ"
+foreach ($opt in @(@{L="短め (35%)";V=35}, @{L="標準 (45%)";V=45}, @{L="長め (55%)";V=55})) {
+    $item = New-Object System.Windows.Controls.MenuItem
+    $item.Header = $opt.L; $item.Tag = $opt.V
+    $item.Add_Click({ param($s,$e) $script:Settings.HourLength = [int]$s.Tag; Tick-Handler; Save-Settings })
+    $subHL.Items.Add($item) | Out-Null
+}
+$menuHands.Items.Add($subHL) | Out-Null
+
+# 分針 太さ
+$subMW = New-Object System.Windows.Controls.MenuItem
+$subMW.Header = "分針 太さ"
+foreach ($opt in @(@{L="極細 (1.5px)";V=1.5}, @{L="標準 (2.5px)";V=2.5}, @{L="太め (4.0px)";V=4.0}, @{L="極太 (6.0px)";V=6.0})) {
+    $item = New-Object System.Windows.Controls.MenuItem
+    $item.Header = $opt.L; $item.Tag = $opt.V
+    $item.Add_Click({ param($s,$e) $script:Settings.MinuteWidth = [double]$s.Tag; Tick-Handler; Save-Settings })
+    $subMW.Items.Add($item) | Out-Null
+}
+$menuHands.Items.Add($subMW) | Out-Null
+
+# 分針 長さ
+$subML = New-Object System.Windows.Controls.MenuItem
+$subML.Header = "分針 長さ"
+foreach ($opt in @(@{L="短め (55%)";V=55}, @{L="標準 (65%)";V=65}, @{L="長め (80%)";V=80})) {
+    $item = New-Object System.Windows.Controls.MenuItem
+    $item.Header = $opt.L; $item.Tag = $opt.V
+    $item.Add_Click({ param($s,$e) $script:Settings.MinuteLength = [int]$s.Tag; Tick-Handler; Save-Settings })
+    $subML.Items.Add($item) | Out-Null
+}
+$menuHands.Items.Add($subML) | Out-Null
+
+$contextMenu.Items.Add($menuHands) | Out-Null
+
+# デジタル文字サイズ
+$menuDigitalSize = New-Object System.Windows.Controls.MenuItem
+$menuDigitalSize.Header = "🔤 デジタル文字サイズ"
+foreach ($opt in @(@{L="小 (36px)";V=36}, @{L="標準 (64px)";V=64}, @{L="大 (96px)";V=96}, @{L="特大 (128px)";V=128})) {
+    $item = New-Object System.Windows.Controls.MenuItem
+    $item.Header = $opt.L; $item.Tag = $opt.V
+    $item.Add_Click({ param($s,$e) $script:Settings.DigitalSize = [double]$s.Tag; Apply-Mode; Save-Settings })
+    $menuDigitalSize.Items.Add($item) | Out-Null
+}
+$contextMenu.Items.Add($menuDigitalSize) | Out-Null
 
 $contextMenu.Items.Add((New-Object System.Windows.Controls.Separator)) | Out-Null
 
@@ -484,6 +560,11 @@ $menuReset.Add_Click({
     $script:Settings.Theme = "dark"
     $script:Settings.Opacity = 0.85
     $script:Settings.ShowSeconds = $true
+    $script:Settings.HourWidth = 2.5
+    $script:Settings.HourLength = 45
+    $script:Settings.MinuteWidth = 2.5
+    $script:Settings.MinuteLength = 65
+    $script:Settings.DigitalSize = 64
     if ($script:menuSeconds) { $script:menuSeconds.IsChecked = $true }
     Apply-Mode
     Tick-Handler
