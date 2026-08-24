@@ -1,4 +1,4 @@
 Set WshShell = CreateObject("WScript.Shell")
 strPath = CreateObject("Scripting.FileSystemObject").GetParentFolderName(WScript.ScriptFullName)
-strCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -STA -WindowStyle Hidden -File """ & strPath & "\desk_clock.ps1"""
-WshShell.Run strCommand, 0, False
+strUrl = "file:///" & Replace(strPath & "\desk_clock.html", "\", "/")
+WshShell.Run "msedge.exe --app=""" & strUrl & """ --window-size=350,350", 0, False
