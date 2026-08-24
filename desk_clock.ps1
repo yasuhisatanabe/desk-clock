@@ -17,9 +17,9 @@ $script:Settings = @{
     Theme        = "dark"
     Opacity      = 0.85
     ShowSeconds  = $true
-    HourWidth    = 2.5
+    HourWidth    = 4.0
     HourLength   = 45
-    MinuteWidth  = 2.5
+    MinuteWidth  = 4.0
     MinuteLength = 65
     DigitalSize  = 64
     Width        = 300
@@ -31,37 +31,37 @@ $script:Settings = @{
 # ===== テーマ定義 =====
 $script:Themes = @{
     dark = @{
-        Face            = "#E0181820"
-        FaceBorder      = "#40505064"
-        TickMajor       = "#9996969A"
-        TickMinor       = "#4D646478"
-        HandHour        = "#CCA0A0B4"
-        HandMinute      = "#B382829B"
-        HandSecond      = "#998C8CA0"
-        CenterDot       = "#B38C8CA0"
-        DigitalColor    = "#CCA0A0B4"
+        Face            = "#E6181820"
+        FaceBorder      = "#59646482"
+        TickMajor       = "#D9BEBED7"
+        TickMinor       = "#7382829B"
+        HandHour        = "#F2DCDCF0"
+        HandMinute      = "#E6B4B4D2"
+        HandSecond      = "#B3A0A0B9"
+        CenterDot       = "#E6B4B4D2"
+        DigitalColor    = "#F2DCDCF0"
     }
     light = @{
-        Face            = "#E0E1E1E6"
-        FaceBorder      = "#4D9696AA"
-        TickMajor       = "#803C3C50"
-        TickMinor       = "#40646478"
-        HandHour        = "#B3323246"
-        HandMinute      = "#9946465A"
-        HandSecond      = "#80645055"
-        CenterDot       = "#9946465A"
-        DigitalColor    = "#B328283C"
+        Face            = "#E6EBEBF0"
+        FaceBorder      = "#668C8CA5"
+        TickMajor       = "#CC28283C"
+        TickMinor       = "#73505069"
+        HandHour        = "#F21E1E32"
+        HandMinute      = "#E637374E"
+        HandSecond      = "#A65A464B"
+        CenterDot       = "#E637374E"
+        DigitalColor    = "#F21E1E32"
     }
     blue = @{
-        Face            = "#E00E1428"
-        FaceBorder      = "#4D284678"
-        TickMajor       = "#995A78AA"
-        TickMinor       = "#403C5078"
-        HandHour        = "#B3648CBE"
-        HandMinute      = "#995073A5"
-        HandSecond      = "#80466E96"
-        CenterDot       = "#995073A5"
-        DigitalColor    = "#B36496C8"
+        Face            = "#E60E1428"
+        FaceBorder      = "#66325591"
+        TickMajor       = "#D978A5E1"
+        TickMinor       = "#734B699B"
+        HandHour        = "#F28CBEF5"
+        HandMinute      = "#E6699BD7"
+        HandSecond      = "#B35A8CB9"
+        CenterDot       = "#E6699BD7"
+        DigitalColor    = "#F28CBEF5"
     }
 }
 
@@ -128,7 +128,7 @@ $xaml = @"
                 <TextBlock x:Name="DigitalTime" 
                            Text="00:00"
                            FontSize="64"
-                           FontWeight="Light"
+                           FontWeight="Medium"
                            FontFamily="Segoe UI, Consolas"
                            HorizontalAlignment="Center"/>
             </StackPanel>
@@ -218,7 +218,7 @@ function Draw-AnalogClock {
         $line.X2 = $cx + $innerTR * [Math]::Cos($angle)
         $line.Y2 = $cy + $innerTR * [Math]::Sin($angle)
         $line.Stroke = if ($isMajor) { Get-BrushFromHex $theme.TickMajor } else { Get-BrushFromHex $theme.TickMinor }
-        $line.StrokeThickness = if ($isMajor) { 2.5 } else { 1.0 }
+        $line.StrokeThickness = if ($isMajor) { 3.5 } else { 1.8 }
         $line.StrokeStartLineCap = "Round"
         $line.StrokeEndLineCap = "Round"
         $analogCanvas.Children.Add($line) | Out-Null
@@ -278,20 +278,20 @@ function Draw-AnalogClock {
 
     # Center dot
     $centerDot = New-Object System.Windows.Shapes.Ellipse
-    $centerDot.Width = 10
-    $centerDot.Height = 10
+    $centerDot.Width = 13
+    $centerDot.Height = 13
     $centerDot.Fill = Get-BrushFromHex $theme.CenterDot
-    [System.Windows.Controls.Canvas]::SetLeft($centerDot, $cx - 5)
-    [System.Windows.Controls.Canvas]::SetTop($centerDot, $cy - 5)
+    [System.Windows.Controls.Canvas]::SetLeft($centerDot, $cx - 6.5)
+    [System.Windows.Controls.Canvas]::SetTop($centerDot, $cy - 6.5)
     $analogCanvas.Children.Add($centerDot) | Out-Null
 
     # Inner center dot
     $innerDot = New-Object System.Windows.Shapes.Ellipse
-    $innerDot.Width = 4
-    $innerDot.Height = 4
+    $innerDot.Width = 5
+    $innerDot.Height = 5
     $innerDot.Fill = Get-BrushFromHex $theme.Face
-    [System.Windows.Controls.Canvas]::SetLeft($innerDot, $cx - 2)
-    [System.Windows.Controls.Canvas]::SetTop($innerDot, $cy - 2)
+    [System.Windows.Controls.Canvas]::SetLeft($innerDot, $cx - 2.5)
+    [System.Windows.Controls.Canvas]::SetTop($innerDot, $cy - 2.5)
     $analogCanvas.Children.Add($innerDot) | Out-Null
 }
 
