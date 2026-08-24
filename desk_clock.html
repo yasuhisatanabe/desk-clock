@@ -151,15 +151,6 @@
     line-height: 1;
   }
 
-  #digital-seconds {
-    font-size: clamp(16px, 3vw, 36px);
-    font-weight: 300;
-    color: var(--hand-second);
-    margin-top: 4px;
-    opacity: 0.8;
-    font-variant-numeric: tabular-nums;
-  }
-
   /* ===== Context Menu ===== */
   #context-menu {
     display: none;
@@ -293,7 +284,6 @@
   <canvas id="analog-clock"></canvas>
   <div id="digital-clock">
     <div id="digital-time">00:00</div>
-    <div id="digital-seconds">:00</div>
   </div>
 </div>
 
@@ -354,7 +344,6 @@
   var ctx = canvas.getContext('2d');
   var digitalClock = document.getElementById('digital-clock');
   var digitalTime = document.getElementById('digital-time');
-  var digitalSeconds = document.getElementById('digital-seconds');
   var menu = document.getElementById('context-menu');
   var opacitySlider = document.getElementById('opacity-slider');
   var opacityValue = document.getElementById('opacity-value');
@@ -550,14 +539,7 @@
     var now = new Date();
     var h = String(now.getHours()).padStart(2, '0');
     var m = String(now.getMinutes()).padStart(2, '0');
-    var s = String(now.getSeconds()).padStart(2, '0');
     digitalTime.textContent = h + ':' + m;
-    if (state.showSeconds) {
-      digitalSeconds.textContent = ':' + s;
-      digitalSeconds.style.display = 'block';
-    } else {
-      digitalSeconds.style.display = 'none';
-    }
   }
 
   // ===== Tick =====

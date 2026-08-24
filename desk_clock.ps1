@@ -151,14 +151,6 @@ function Save-Settings {
                            FontWeight="Light"
                            FontFamily="Segoe UI, Consolas"
                            HorizontalAlignment="Center"/>
-                <TextBlock x:Name="DigitalSeconds"
-                           Text=":00"
-                           FontSize="28"
-                           FontWeight="Light"
-                           FontFamily="Segoe UI, Consolas"
-                           HorizontalAlignment="Center"
-                           Opacity="0.7"
-                           Margin="0,-4,0,0"/>
             </StackPanel>
         </Border>
 
@@ -180,7 +172,6 @@ $mainGrid = $window.FindName("MainGrid")
 $analogCanvas = $window.FindName("AnalogCanvas")
 $digitalBorder = $window.FindName("DigitalBorder")
 $digitalTime = $window.FindName("DigitalTime")
-$digitalSeconds = $window.FindName("DigitalSeconds")
 
 # ===== ヘルパー関数 =====
 function Get-BrushFromHex([string]$hex) {
@@ -333,12 +324,6 @@ function Draw-AnalogClock {
 function Update-DigitalClock {
     $now = Get-Date
     $digitalTime.Text = $now.ToString("HH:mm")
-    if ($script:Settings.ShowSeconds) {
-        $digitalSeconds.Text = ":" + $now.ToString("ss")
-        $digitalSeconds.Visibility = "Visible"
-    } else {
-        $digitalSeconds.Visibility = "Collapsed"
-    }
 }
 
 # ===== 表示モード切替 =====
@@ -355,7 +340,6 @@ function Apply-Mode {
         $digitalBorder.BorderBrush = Get-BrushFromHex $theme.FaceBorder
         $digitalBorder.BorderThickness = New-Object System.Windows.Thickness(1)
         $digitalTime.Foreground = Get-BrushFromHex $theme.DigitalColor
-        $digitalSeconds.Foreground = Get-BrushFromHex $theme.HandSecond
     }
 
     $window.Opacity = $script:Settings.Opacity
