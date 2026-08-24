@@ -1,4 +1,4 @@
-<# 
+﻿<# 
   Desk Clock - YClock風デスクトップ時計
   PowerShell + WPF版
   使い方: powershell -ExecutionPolicy Bypass -File desk_clock.ps1
@@ -509,10 +509,18 @@ $contextMenu.Items.Add($menuExit) | Out-Null
 
 $window.ContextMenu = $contextMenu
 
-# ===== ドラッグ移動 =====
+# ===== ドラッグ移動 & ダブルクリック切替 =====
 $window.Add_MouseLeftButtonDown({
     param($sender, $e)
-    $window.DragMove()
+    if ($e.ClickCount -eq 2) {
+        # ダブルクリックでアナログ/デジタル切替
+        $script:Settings.Mode = if ($script:Settings.Mode -eq "analog") { "digital" } else { "analog" }
+        Apply-Mode
+        Tick-Handler
+        Save-Settings
+    } else {
+        try { $window.DragMove() } catch {}
+    }
 })
 
 # ===== ウィンドウイベント =====
