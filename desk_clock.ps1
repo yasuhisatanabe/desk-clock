@@ -105,7 +105,7 @@ $xaml = @"
 <Window 
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    Title="Desk Clock"
+    Title=""
     WindowStyle="None"
     AllowsTransparency="True"
     Background="Transparent"

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Desk Clock</title>
+<title></title>
 <style>
   /* ===== Reset & Base ===== */
   *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
@@ -129,21 +129,24 @@
     align-items: center;
     justify-content: center;
     background: var(--bg);
-    border-radius: 20px;
-    padding: 30px 50px;
+    border-radius: 24px;
+    padding: clamp(16px, 4vw, 40px) clamp(24px, 6vw, 60px);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     border: 1px solid var(--face-border);
+    max-width: 96vw;
+    max-height: 96vh;
   }
 
   #digital-time {
-    font-size: clamp(36px, 8vw, 96px);
+    font-size: 64px;
     font-weight: 500;
     letter-spacing: 0.04em;
     color: var(--digital-color);
     text-shadow: 0 0 20px var(--digital-shadow);
     font-variant-numeric: tabular-nums;
     line-height: 1;
+    white-space: nowrap;
   }
 
   /* ===== Context Menu ===== */
@@ -494,6 +497,14 @@
     container.style.transform = 'translate(calc(-50% + ' + state.posX + 'px), calc(-50% + ' + state.posY + 'px))';
   }
 
+  function updateDigitalSize() {
+    // Proportional to viewport max size
+    var baseFontSize = Math.min(window.innerWidth * 0.32, window.innerHeight * 0.45);
+    var scale = (state.digitalSize || 64) / 64;
+    var fontSize = Math.max(20, Math.round(baseFontSize * scale));
+    digitalTime.style.fontSize = fontSize + 'px';
+  }
+
   function applyMode() {
     if (state.mode === 'analog') {
       container.className = 'analog-mode';
@@ -506,7 +517,7 @@
       container.style.height = 'auto';
       canvas.style.display = 'none';
       digitalClock.style.display = 'flex';
-      digitalTime.style.fontSize = state.digitalSize + 'px';
+      updateDigitalSize();
       updateDigital();
     }
     applyTheme();
@@ -516,8 +527,8 @@
   // ===== Canvas Resize =====
   function resizeCanvas() {
     if (state.mode !== 'analog') return;
-    var size = Math.min(window.innerWidth, window.innerHeight) * 0.9;
-    var clampedSize = Math.max(120, size);
+    var size = Math.min(window.innerWidth, window.innerHeight) * 0.98;
+    var clampedSize = Math.max(80, size);
     var dpr = window.devicePixelRatio || 1;
     canvas.width = clampedSize * dpr;
     canvas.height = clampedSize * dpr;
@@ -764,7 +775,7 @@
   });
 
   bindSlider(digitalSizeSlider, digitalSizeVal, 'px', 'digitalSize', function() {
-    digitalTime.style.fontSize = state.digitalSize + 'px';
+    updateDigitalSize();
   });
 
   // ===== Drag =====
@@ -803,6 +814,8 @@
     if (state.mode === 'analog') {
       resizeCanvas();
       drawAnalog();
+    } else {
+      updateDigitalSize();
     }
   });
 
