@@ -24,8 +24,8 @@ $script:Settings = @{
     SecondWidth  = 1.5
     SecondLength = 72
     DigitalSize  = 64
-    Width        = 300
-    Height       = 300
+    Width        = 220
+    Height       = 220
     Left         = -1
     Top          = -1
 }
@@ -112,8 +112,8 @@ $xaml = @"
     Topmost="True"
     ShowInTaskbar="True"
     ResizeMode="CanResizeWithGrip"
-    MinWidth="120" MinHeight="120"
-    Width="300" Height="300">
+    MinWidth="100" MinHeight="100"
+    Width="220" Height="220">
 
     <Grid x:Name="MainGrid" Background="#01000000">
         <!-- Analog Clock Canvas -->
