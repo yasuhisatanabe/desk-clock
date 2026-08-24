@@ -1,5 +1,5 @@
 ﻿<# 
-  Desk Clock - YClock風デスクトップ時計
+  Desk Clock - 軽量・ミニマル デスクトップ時計
   PowerShell + WPF版
 #>
 
