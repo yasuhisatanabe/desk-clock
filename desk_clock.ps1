@@ -7,9 +7,37 @@ Add-Type -AssemblyName PresentationFramework
 Add-Type -AssemblyName PresentationCore
 Add-Type -AssemblyName WindowsBase
 
+# ===== Win32 API (Click-Through) =====
+$win32Code = @"
+using System;
+using System.Runtime.InteropServices;
+public class Win32 {
+    public const int GWL_EXSTYLE = -20;
+    public const int WS_EX_TRANSPARENT = 0x00000020;
+    public const int WS_EX_LAYERED = 0x00080000;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+
+    public static void SetClickThrough(IntPtr hWnd, bool enable) {
+        int style = GetWindowLong(hWnd, GWL_EXSTYLE);
+        if (enable) {
+            SetWindowLong(hWnd, GWL_EXSTYLE, style | WS_EX_TRANSPARENT | WS_EX_LAYERED);
+        } else {
+            SetWindowLong(hWnd, GWL_EXSTYLE, style & ~WS_EX_TRANSPARENT);
+        }
+    }
+}
+"@
+try { Add-Type -TypeDefinition $win32Code -Language CSharp } catch {}
+
 # ===== 設定ファイルパス =====
 $settingsDir = Join-Path $env:APPDATA "DeskClock"
 $settingsFile = Join-Path $settingsDir "settings.json"
+$startupLnk = Join-Path ([Environment]::GetFolderPath("Startup")) "DeskClock.lnk"
 
 # ===== デフォルト設定 =====
 $script:Settings = @{
@@ -17,6 +45,8 @@ $script:Settings = @{
     Theme        = "dark"
     Opacity      = 0.85
     ShowSeconds  = $false
+    SmartOpacity = $false
+    ClickThrough = $false
     HourWidth    = 4.0
     HourLength   = 45
     MinuteWidth  = 4.0
@@ -76,6 +106,8 @@ function Load-Settings {
             if ($json.Theme) { $script:Settings.Theme = $json.Theme }
             if ($null -ne $json.Opacity) { $script:Settings.Opacity = [double]$json.Opacity }
             if ($null -ne $json.ShowSeconds) { $script:Settings.ShowSeconds = [bool]$json.ShowSeconds }
+            if ($null -ne $json.SmartOpacity) { $script:Settings.SmartOpacity = [bool]$json.SmartOpacity }
+            if ($null -ne $json.ClickThrough) { $script:Settings.ClickThrough = [bool]$json.ClickThrough }
             if ($null -ne $json.HourWidth) { $script:Settings.HourWidth = [double]$json.HourWidth }
             if ($null -ne $json.HourLength) { $script:Settings.HourLength = [int]$json.HourLength }
             if ($null -ne $json.MinuteWidth) { $script:Settings.MinuteWidth = [double]$json.MinuteWidth }
@@ -288,6 +320,25 @@ function Update-DigitalClock {
     $digitalTime.Text = $now.ToString("HH:mm")
 }
 
+# ===== ウィンドウ透明度・クリック透過・パルス =====
+function Apply-WindowOpacity {
+    if ($script:Settings.SmartOpacity) {
+        $window.Opacity = $script:Settings.Opacity * 0.45
+    } else {
+        $window.Opacity = $script:Settings.Opacity
+    }
+}
+
+function Apply-ClickThrough {
+    try {
+        $helper = New-Object System.Windows.Interop.WindowInteropHelper($window)
+        $hwnd = $helper.Handle
+        if ($hwnd -ne [IntPtr]::Zero) {
+            [Win32]::SetClickThrough($hwnd, $script:Settings.ClickThrough)
+        }
+    } catch {}
+}
+
 # ===== 表示モード切替 =====
 function Apply-Mode {
     $theme = Get-CurrentTheme
@@ -305,7 +356,8 @@ function Apply-Mode {
         $digitalTime.FontSize = $script:Settings.DigitalSize
     }
 
-    $window.Opacity = $script:Settings.Opacity
+    Apply-WindowOpacity
+    Apply-ClickThrough
 }
 
 # ===== タイマー =====
@@ -354,6 +406,64 @@ $script:menuSeconds.Add_Click({
     Save-Settings
 })
 $contextMenu.Items.Add($script:menuSeconds) | Out-Null
+
+# --- スマート透過 (マウス連動) ---
+$script:menuSmartOp = New-Object System.Windows.Controls.MenuItem
+$script:menuSmartOp.Header = "スマート透過 (マウス連動)"
+$script:menuSmartOp.IsCheckable = $true
+$script:menuSmartOp.IsChecked = $false
+$script:menuSmartOp.Add_Click({
+    $script:Settings.SmartOpacity = $script:menuSmartOp.IsChecked
+    Apply-WindowOpacity
+    Save-Settings
+})
+$contextMenu.Items.Add($script:menuSmartOp) | Out-Null
+
+# --- クリックすり抜けモード ---
+$script:menuClickThrough = New-Object System.Windows.Controls.MenuItem
+$script:menuClickThrough.Header = "クリックすり抜け (Ctrl+Shift+X)"
+$script:menuClickThrough.IsCheckable = $true
+$script:menuClickThrough.IsChecked = $false
+$script:menuClickThrough.Add_Click({
+    $script:Settings.ClickThrough = $script:menuClickThrough.IsChecked
+    Apply-ClickThrough
+    Save-Settings
+})
+$contextMenu.Items.Add($script:menuClickThrough) | Out-Null
+
+$contextMenu.Items.Add((New-Object System.Windows.Controls.Separator)) | Out-Null
+
+# --- スタートアップ自動起動 ---
+$script:menuStartup = New-Object System.Windows.Controls.MenuItem
+$script:menuStartup.Header = "Windows起動時に自動起動"
+$script:menuStartup.IsCheckable = $true
+$script:menuStartup.IsChecked = (Test-Path $startupLnk)
+$script:menuStartup.Add_Click({
+    if ($script:menuStartup.IsChecked) {
+        # 作成
+        try {
+            $wsh = New-Object -ComObject WScript.Shell
+            $sc = $wsh.CreateShortcut($startupLnk)
+            $vbsPath = Join-Path $PSScriptRoot "start_clock.vbs"
+            if (Test-Path $vbsPath) {
+                $sc.TargetPath = "wscript.exe"
+                $sc.Arguments = "`"$vbsPath`""
+                $sc.WorkingDirectory = $PSScriptRoot
+            } else {
+                $sc.TargetPath = "powershell.exe"
+                $sc.Arguments = "-ExecutionPolicy Bypass -WindowStyle Hidden -NoProfile -File `"$PSCommandPath`""
+                $sc.WorkingDirectory = $PSScriptRoot
+            }
+            $sc.WindowStyle = 7
+            $sc.Description = "Desk Clock Startup Launcher"
+            $sc.Save()
+        } catch {}
+    } else {
+        # 削除
+        if (Test-Path $startupLnk) { Remove-Item $startupLnk -Force -ErrorAction SilentlyContinue }
+    }
+})
+$contextMenu.Items.Add($script:menuStartup) | Out-Null
 
 $contextMenu.Items.Add((New-Object System.Windows.Controls.Separator)) | Out-Null
 
@@ -538,6 +648,32 @@ $window.Add_MouseLeftButtonDown({
     }
 })
 
+# ===== ホバー & キーボードイベント =====
+$window.Add_MouseEnter({
+    if ($script:Settings.SmartOpacity) {
+        $window.Opacity = 1.0
+    }
+})
+
+$window.Add_MouseLeave({
+    if ($script:Settings.SmartOpacity) {
+        Apply-WindowOpacity
+    }
+})
+
+$window.Add_KeyDown({
+    param($sender, $e)
+    # Ctrl + Shift + X: クリック透過トグル
+    if (($e.KeyboardDevice.Modifiers -band [System.Windows.Input.ModifierKeys]::Control) -and 
+        ($e.KeyboardDevice.Modifiers -band [System.Windows.Input.ModifierKeys]::Shift) -and 
+        $e.Key -eq [System.Windows.Input.Key]::X) {
+        $script:Settings.ClickThrough = -not $script:Settings.ClickThrough
+        if ($script:menuClickThrough) { $script:menuClickThrough.IsChecked = $script:Settings.ClickThrough }
+        Apply-ClickThrough
+        Save-Settings
+    }
+})
+
 # ===== ウィンドウイベント =====
 $window.Add_Loaded({
     Load-Settings
@@ -554,6 +690,10 @@ $window.Add_Loaded({
     
     Apply-Mode
     if ($script:menuSeconds) { $script:menuSeconds.IsChecked = $script:Settings.ShowSeconds }
+    if ($script:menuSmartOp) { $script:menuSmartOp.IsChecked = $script:Settings.SmartOpacity }
+    if ($script:menuClickThrough) { $script:menuClickThrough.IsChecked = $script:Settings.ClickThrough }
+    if ($script:menuStartup) { $script:menuStartup.IsChecked = (Test-Path $startupLnk) }
+    
     Tick-Handler
     
     $script:timer = New-Object System.Windows.Threading.DispatcherTimer

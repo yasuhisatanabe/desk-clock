@@ -101,11 +101,35 @@
     align-items: center;
     justify-content: center;
     cursor: grab;
+    transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   #clock-container:active {
     cursor: grabbing;
   }
+
+  #clock-container.click-through {
+    pointer-events: none !important;
+  }
+
+  /* Toast Notification */
+  #toast {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(20, 20, 28, 0.95);
+    color: #e0e0f0;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 12px;
+    border: 1px solid var(--face-border);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    z-index: 20000;
+  }
+  #toast.show { opacity: 1; }
 
   #clock-container.analog-mode {
     width: min(90vw, 90vh);
@@ -294,7 +318,9 @@
   <div class="menu-item" data-action="mode-digital">&#128290; デジタル</div>
   <div class="menu-separator"></div>
   <div class="menu-section-label">表示設定</div>
-  <div class="menu-item active" data-action="toggle-seconds">&#9202; 秒針を表示</div>
+  <div class="menu-item" data-action="toggle-seconds">&#9202; 秒針を表示</div>
+  <div class="menu-item" data-action="toggle-smart-opacity">&#128065; スマート透過 (マウス連動)</div>
+  <div class="menu-item" data-action="toggle-click-through">&#128070; クリックすり抜け (Ctrl+Shift+X)</div>
   <div class="menu-separator"></div>
   <!-- Analog Specific Settings -->
   <div id="analog-settings-group">
@@ -374,6 +400,8 @@
     secondWidth: 1.5,
     secondLength: 72,
     digitalSize: 64,
+    smartOpacity: false,
+    clickThrough: false,
     posX: 0,
     posY: 0
   };
@@ -389,6 +417,8 @@
         if (parsed.theme) state.theme = parsed.theme;
         if (parsed.opacity != null) state.opacity = parsed.opacity;
         if (parsed.showSeconds != null) state.showSeconds = parsed.showSeconds;
+        if (parsed.smartOpacity != null) state.smartOpacity = parsed.smartOpacity;
+        if (parsed.clickThrough != null) state.clickThrough = parsed.clickThrough;
         if (parsed.hourWidth != null) state.hourWidth = parseFloat(parsed.hourWidth);
         if (parsed.hourLength != null) state.hourLength = parseInt(parsed.hourLength);
         if (parsed.minuteWidth != null) state.minuteWidth = parseFloat(parsed.minuteWidth);
@@ -484,18 +514,53 @@
         el2.classList.remove('active');
       }
     }
-    // Update seconds toggle
+    // Update toggles in menu
     var secToggle = menu.querySelector('[data-action="toggle-seconds"]');
     if (secToggle) {
-      if (state.showSeconds) {
-        secToggle.classList.add('active');
-      } else {
-        secToggle.classList.remove('active');
-      }
+      if (state.showSeconds) secToggle.classList.add('active'); else secToggle.classList.remove('active');
+    }
+    var smartToggle = menu.querySelector('[data-action="toggle-smart-opacity"]');
+    if (smartToggle) {
+      if (state.smartOpacity) smartToggle.classList.add('active'); else smartToggle.classList.remove('active');
+    }
+    var ctToggle = menu.querySelector('[data-action="toggle-click-through"]');
+    if (ctToggle) {
+      if (state.clickThrough) ctToggle.classList.add('active'); else ctToggle.classList.remove('active');
     }
   }
 
+  function applyOpacity() {
+    if (state.smartOpacity) {
+      container.style.opacity = (state.opacity / 100) * 0.45;
+    } else {
+      container.style.opacity = state.opacity / 100;
+    }
+  }
+
+  function applyClickThrough() {
+    if (state.clickThrough) {
+      container.classList.add('click-through');
+      showToast('クリックすり抜け有効 (解除: Ctrl+Shift+X)');
+    } else {
+      container.classList.remove('click-through');
+    }
+  }
+
+  function showToast(msg) {
+    var toast = document.getElementById('toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'toast';
+      document.body.appendChild(toast);
+    }
+    toast.textContent = msg;
+    toast.classList.add('show');
+    setTimeout(function() { toast.classList.remove('show'); }, 3000);
+  }
+
   function updatePosition() {
+    container.style.setProperty('--pos-x', (state.posX || 0) + 'px');
+    container.style.setProperty('--pos-y', (state.posY || 0) + 'px');
     container.style.transform = 'translate(calc(-50% + ' + state.posX + 'px), calc(-50% + ' + state.posY + 'px))';
   }
 
@@ -710,12 +775,22 @@
     } else if (action === 'toggle-seconds') {
       state.showSeconds = !state.showSeconds;
       applyTheme();
+    } else if (action === 'toggle-smart-opacity') {
+      state.smartOpacity = !state.smartOpacity;
+      applyOpacity();
+      applyTheme();
+    } else if (action === 'toggle-click-through') {
+      state.clickThrough = !state.clickThrough;
+      applyClickThrough();
+      applyTheme();
     } else if (action.indexOf('theme-') === 0) {
       state.theme = action.replace('theme-', '');
       applyTheme();
     } else if (action === 'reset') {
       state = Object.assign({}, defaults);
       applyMode();
+      applyOpacity();
+      applyClickThrough();
     }
 
     saveState();
@@ -809,10 +884,35 @@
     }
   });
 
+  // Mouse hover for smart opacity
+  container.addEventListener('mouseenter', function() {
+    if (state.smartOpacity) {
+      container.style.opacity = '1.0';
+    }
+  });
+
+  container.addEventListener('mouseleave', function() {
+    if (state.smartOpacity) {
+      applyOpacity();
+    }
+  });
+
+  // Global Hotkey (Ctrl + Shift + X) for Click-Through toggle
+  window.addEventListener('keydown', function(e) {
+    if (e.ctrlKey && e.shiftKey && (e.key === 'X' || e.key === 'x')) {
+      state.clickThrough = !state.clickThrough;
+      applyClickThrough();
+      applyTheme();
+      saveState();
+    }
+  });
+
   // ===== Init =====
   document.title = '\u200E';
   loadState();
   applyMode();
+  applyOpacity();
+  applyClickThrough();
   updatePosition();
   tick();
   setInterval(tick, 1000);
