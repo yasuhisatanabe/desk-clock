@@ -1,4 +1,4 @@
 Set WshShell = CreateObject("WScript.Shell")
 strPath = CreateObject("Scripting.FileSystemObject").GetParentFolderName(WScript.ScriptFullName)
-strUrl = "file:///" & Replace(strPath & "\desk_clock.html", "\", "/")
-WshShell.Run "msedge.exe --app=""" & strUrl & """ --window-size=220,220 --force-dark-mode --enable-features=WebUIDarkMode", 0, False
+strPs1 = strPath & "\desk_clock.ps1"
+WshShell.Run "powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -NoProfile -File """ & strPs1 & """", 0, False
