@@ -16,7 +16,7 @@ $script:Settings = @{
     Mode         = "analog"
     Theme        = "dark"
     Opacity      = 0.85
-    ShowSeconds  = $true
+    ShowSeconds  = $false
     HourWidth    = 4.0
     HourLength   = 45
     MinuteWidth  = 4.0
@@ -111,7 +111,7 @@ $xaml = @"
     Background="Transparent"
     Topmost="True"
     ShowInTaskbar="True"
-    ResizeMode="CanResizeWithGrip"
+    ResizeMode="CanResize"
     MinWidth="100" MinHeight="100"
     Width="220" Height="220">
 
@@ -347,7 +347,7 @@ $contextMenu.Items.Add((New-Object System.Windows.Controls.Separator)) | Out-Nul
 $script:menuSeconds = New-Object System.Windows.Controls.MenuItem
 $script:menuSeconds.Header = "秒針を表示"
 $script:menuSeconds.IsCheckable = $true
-$script:menuSeconds.IsChecked = $true
+$script:menuSeconds.IsChecked = $false
 $script:menuSeconds.Add_Click({
     $script:Settings.ShowSeconds = $script:menuSeconds.IsChecked
     Tick-Handler
@@ -493,7 +493,7 @@ $menuReset.Add_Click({
     $script:Settings.Mode = "analog"
     $script:Settings.Theme = "dark"
     $script:Settings.Opacity = 0.85
-    $script:Settings.ShowSeconds = $true
+    $script:Settings.ShowSeconds = $false
     $script:Settings.HourWidth = 4.0
     $script:Settings.HourLength = 45
     $script:Settings.MinuteWidth = 4.0
@@ -501,7 +501,7 @@ $menuReset.Add_Click({
     $script:Settings.SecondWidth = 1.5
     $script:Settings.SecondLength = 72
     $script:Settings.DigitalSize = 64
-    if ($script:menuSeconds) { $script:menuSeconds.IsChecked = $true }
+    if ($script:menuSeconds) { $script:menuSeconds.IsChecked = $false }
     Apply-Mode
     Tick-Handler
     Save-Settings
