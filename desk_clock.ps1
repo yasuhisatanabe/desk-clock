@@ -226,8 +226,8 @@ function Draw-AnalogClock {
     for ($i = 0; $i -lt 60; $i++) {
         $angle = ($i * 6 - 90) * [Math]::PI / 180.0
         $isMajor = ($i % 5 -eq 0)
-        $outerTR = $r * 0.92
-        $innerTR = if ($isMajor) { $r * 0.82 } else { $r * 0.87 }
+        $outerTR = $r - 2.0
+        $innerTR = if ($isMajor) { $outerTR - $r * 0.11 } else { $outerTR - $r * 0.055 }
         
         $line = New-Object System.Windows.Shapes.Line
         $line.X1 = $cx + $outerTR * [Math]::Cos($angle)

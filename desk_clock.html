@@ -646,8 +646,8 @@
     for (var i = 0; i < 60; i++) {
       var angle = (i * 6 - 90) * Math.PI / 180;
       var isMajor = i % 5 === 0;
-      var outerR = r * 0.92;
-      var innerR = isMajor ? r * 0.82 : r * 0.87;
+      var outerR = r - 2;
+      var innerR = isMajor ? (outerR - r * 0.11) : (outerR - r * 0.055);
       var cos = Math.cos(angle);
       var sin = Math.sin(angle);
 
