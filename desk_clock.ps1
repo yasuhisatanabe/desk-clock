@@ -41,23 +41,25 @@ $startupLnk = Join-Path ([Environment]::GetFolderPath("Startup")) "DeskClock.lnk
 
 # ===== デフォルト設定 =====
 $script:Settings = @{
-    Mode         = "analog"
-    Theme        = "dark"
-    Opacity      = 0.85
-    ShowSeconds  = $false
-    SmartOpacity = $false
-    ClickThrough = $false
-    HourWidth    = 4.0
-    HourLength   = 45
-    MinuteWidth  = 4.0
-    MinuteLength = 82
-    SecondWidth  = 1.5
-    SecondLength = 72
-    DigitalSize  = 64
-    Width        = 220
-    Height       = 220
-    Left         = -1
-    Top          = -1
+    Mode            = "analog"      # "analog" or "digital"
+    Theme           = "dark"        # "dark", "light", "blue"
+    Opacity         = 0.85          # 0.30 - 1.00
+    ShowSeconds     = $false        # $true / $false (秒針表示)
+    SmartOpacity    = $false        # $true / $false (スマート透過: 平常時半透明、ホバー時100%)
+    ClickThrough    = $false        # $true / $false (クリックすり抜け)
+    Topmost         = $true         # $true / $false (最前面固定)
+    ShowDate        = $false        # $true / $false (デジタル時日付・曜日表示)
+    HourWidth       = 4.0           # 1.5 - 6.0
+    HourLength      = 45            # 35 - 55 (%)
+    MinuteWidth     = 4.0           # 1.5 - 6.0
+    MinuteLength    = 82            # 55 - 80 (%)
+    SecondWidth     = 1.5           # 1.0 - 4.0
+    SecondLength    = 72            # 60 - 85 (%)
+    DigitalSize     = 64.0          # 36 - 128 (px)
+    Width           = 220
+    Height          = 220
+    Left            = -1            # -1 = CenterScreen
+    Top             = -1
 }
 
 # ===== テーマ定義 =====
@@ -102,6 +104,8 @@ function Load-Settings {
             if ($null -ne $json.ShowSeconds) { $script:Settings.ShowSeconds = [bool]$json.ShowSeconds }
             if ($null -ne $json.SmartOpacity) { $script:Settings.SmartOpacity = [bool]$json.SmartOpacity }
             if ($null -ne $json.ClickThrough) { $script:Settings.ClickThrough = [bool]$json.ClickThrough }
+            if ($null -ne $json.Topmost) { $script:Settings.Topmost = [bool]$json.Topmost }
+            if ($null -ne $json.ShowDate) { $script:Settings.ShowDate = [bool]$json.ShowDate }
             if ($null -ne $json.HourWidth) { $script:Settings.HourWidth = [double]$json.HourWidth }
             if ($null -ne $json.HourLength) { $script:Settings.HourLength = [int]$json.HourLength }
             if ($null -ne $json.MinuteWidth) { $script:Settings.MinuteWidth = [double]$json.MinuteWidth }
@@ -124,6 +128,19 @@ function Save-Settings {
         }
         $script:Settings | ConvertTo-Json | Set-Content $settingsFile -Encoding UTF8
     } catch {}
+}
+
+# ホイール等の連続操作で毎回ディスクへ書かないよう保存を 400ms 遅延させる
+$script:saveTimer = New-Object System.Windows.Threading.DispatcherTimer
+$script:saveTimer.Interval = [TimeSpan]::FromMilliseconds(400)
+$script:saveTimer.Add_Tick({
+    $script:saveTimer.Stop()
+    Save-Settings
+})
+
+function Request-Save {
+    $script:saveTimer.Stop()
+    $script:saveTimer.Start()
 }
 
 # ===== XAML =====
@@ -161,6 +178,15 @@ $xaml = @"
                            FontWeight="Medium"
                            FontFamily="Segoe UI, Consolas"
                            HorizontalAlignment="Center"/>
+                <TextBlock x:Name="DigitalDate" 
+                           Text="1月1日 (日)"
+                           FontSize="18"
+                           FontWeight="Normal"
+                           FontFamily="Segoe UI, Meiryo"
+                           Opacity="0.7"
+                           HorizontalAlignment="Center"
+                           Margin="0,4,0,0"
+                           Visibility="Collapsed"/>
             </StackPanel>
         </Border>
     </Grid>
@@ -175,6 +201,7 @@ $mainGrid = $window.FindName("MainGrid")
 $analogCanvas = $window.FindName("AnalogCanvas")
 $digitalBorder = $window.FindName("DigitalBorder")
 $digitalTime = $window.FindName("DigitalTime")
+$digitalDate = $window.FindName("DigitalDate")
 
 # ===== ヘルパー関数 =====
 function Get-BrushFromHex([string]$hex) {
@@ -296,9 +323,16 @@ function Draw-AnalogClock {
 }
 
 # ===== デジタル時計更新 =====
+$script:DaysJa = @("日", "月", "火", "水", "木", "金", "土")
+
 function Update-DigitalClock {
     $now = Get-Date
     $digitalTime.Text = $now.ToString("HH:mm")
+    if ($script:Settings.ShowDate) {
+        # OS のロケールに依存しないよう曜日は自前で組み立てる
+        $dow = $script:DaysJa[[int]$now.DayOfWeek]
+        $digitalDate.Text = "$($now.Month)月$($now.Day)日 ($dow)"
+    }
 }
 
 # ===== ウィンドウ透明度・クリック透過 =====
@@ -320,6 +354,68 @@ function Apply-ClickThrough {
     } catch {}
 }
 
+# ===== スナップ配置 =====
+function Snap-Window([string]$pos) {
+    $workArea = [System.Windows.SystemParameters]::WorkArea
+    $margin = 16.0
+    $w = $window.ActualWidth
+    $h = $window.ActualHeight
+    
+    switch ($pos) {
+        "top-left" {
+            $window.Left = $workArea.Left + $margin
+            $window.Top = $workArea.Top + $margin
+        }
+        "top-center" {
+            $window.Left = $workArea.Left + ($workArea.Width - $w) / 2.0
+            $window.Top = $workArea.Top + $margin
+        }
+        "top-right" {
+            $window.Left = $workArea.Right - $w - $margin
+            $window.Top = $workArea.Top + $margin
+        }
+        "bottom-left" {
+            $window.Left = $workArea.Left + $margin
+            $window.Top = $workArea.Bottom - $h - $margin
+        }
+        "bottom-right" {
+            $window.Left = $workArea.Right - $w - $margin
+            $window.Top = $workArea.Bottom - $h - $margin
+        }
+        "center" {
+            $window.Left = $workArea.Left + ($workArea.Width - $w) / 2.0
+            $window.Top = $workArea.Top + ($workArea.Height - $h) / 2.0
+        }
+    }
+    $script:Settings.Left = $window.Left
+    $script:Settings.Top = $window.Top
+    Save-Settings
+}
+
+# ===== デジタル表示のサイズ合わせ =====
+# $exact = $false のときは「はみ出す場合のみ広げる」（ユーザーが決めたサイズを尊重）
+function Fit-DigitalWindow([bool]$exact = $false) {
+    if ($script:Settings.Mode -ne "digital") { return }
+    try {
+        $inf = New-Object System.Windows.Size -ArgumentList ([double]::PositiveInfinity), ([double]::PositiveInfinity)
+        $digitalBorder.Measure($inf)
+        $needW = [Math]::Ceiling($digitalBorder.DesiredSize.Width) + 4
+        $needH = [Math]::Ceiling($digitalBorder.DesiredSize.Height) + 4
+        $digitalBorder.InvalidateMeasure()
+    } catch { return }
+    if ($needW -le 0 -or $needH -le 0) { return }
+
+    $curW = if ([double]::IsNaN($window.Width)) { $window.ActualWidth } else { $window.Width }
+    $curH = if ([double]::IsNaN($window.Height)) { $window.ActualHeight } else { $window.Height }
+    $newW = if ($exact) { $needW } else { [Math]::Max($curW, $needW) }
+    $newH = if ($exact) { $needH } else { [Math]::Max($curH, $needH) }
+
+    $window.Width  = [Math]::Max(100, [Math]::Min(800, $newW))
+    $window.Height = [Math]::Max(100, [Math]::Min(800, $newH))
+    $script:Settings.Width  = [int]$window.Width
+    $script:Settings.Height = [int]$window.Height
+}
+
 # ===== 表示モード切替 =====
 function Apply-Mode {
     $theme = Get-CurrentTheme
@@ -335,19 +431,42 @@ function Apply-Mode {
         $digitalBorder.BorderThickness = New-Object System.Windows.Thickness(0)
         $digitalTime.Foreground = Get-BrushFromHex $theme.DigitalColor
         $digitalTime.FontSize = $script:Settings.DigitalSize
+        
+        $digitalDate.Foreground = Get-BrushFromHex $theme.DigitalColor
+        $digitalDate.FontSize = [Math]::Max(11, [Math]::Round($script:Settings.DigitalSize * 0.28))
+        $digitalDate.Visibility = if ($script:Settings.ShowDate) { "Visible" } else { "Collapsed" }
+        Fit-DigitalWindow $false
     }
 
+    $window.Topmost = $script:Settings.Topmost
     Apply-WindowOpacity
     Apply-ClickThrough
 }
 
-# ===== タイマー =====
+# ===== タイマー & 省電力制御 =====
+function Adjust-TimerInterval {
+    if (-not $script:timer) { return }
+    if ($script:Settings.Mode -eq "analog" -and $script:Settings.ShowSeconds) {
+        # Interval への代入は稼働中タイマーを再スタートさせるため、変化時のみ書き込む
+        $oneSec = [TimeSpan]::FromSeconds(1)
+        if ($script:timer.Interval -ne $oneSec) { $script:timer.Interval = $oneSec }
+    } else {
+        # 秒針OFF時は次の 00 秒までミリ秒単位で同期し、更新を毎分1回に抑える
+        $now = Get-Date
+        $msToNextMin = (60 - $now.Second) * 1000 - $now.Millisecond + 50
+        # 直近の 00 秒を跨いでしまわないよう、下限は 1 秒に丸めるだけに留める
+        if ($msToNextMin -lt 1000) { $msToNextMin = 1000 }
+        $script:timer.Interval = [TimeSpan]::FromMilliseconds($msToNextMin)
+    }
+}
+
 function Tick-Handler {
     if ($script:Settings.Mode -eq "analog") {
         Draw-AnalogClock
     } else {
         Update-DigitalClock
     }
+    Adjust-TimerInterval
 }
 
 # ===== コンテキストメニュー =====
@@ -375,6 +494,18 @@ $menuDigital.Add_Click({
 $contextMenu.Items.Add($menuDigital) | Out-Null
 
 $contextMenu.Items.Add((New-Object System.Windows.Controls.Separator)) | Out-Null
+
+# --- 最前面固定 ---
+$script:menuTopmost = New-Object System.Windows.Controls.MenuItem
+$script:menuTopmost.Header = "最前面に固定 (Ctrl+Shift+T)"
+$script:menuTopmost.IsCheckable = $true
+$script:menuTopmost.IsChecked = $script:Settings.Topmost
+$script:menuTopmost.Add_Click({
+    $script:Settings.Topmost = $script:menuTopmost.IsChecked
+    $window.Topmost = $script:Settings.Topmost
+    Save-Settings
+})
+$contextMenu.Items.Add($script:menuTopmost) | Out-Null
 
 # --- 秒針表示トグル ---
 $script:menuSeconds = New-Object System.Windows.Controls.MenuItem
@@ -411,6 +542,41 @@ $script:menuClickThrough.Add_Click({
     Save-Settings
 })
 $contextMenu.Items.Add($script:menuClickThrough) | Out-Null
+
+# --- 日付・曜日表示トグル ---
+$script:menuDate = New-Object System.Windows.Controls.MenuItem
+$script:menuDate.Header = "日付・曜日を表示 (デジタル)"
+$script:menuDate.IsCheckable = $true
+$script:menuDate.IsChecked = $script:Settings.ShowDate
+$script:menuDate.Add_Click({
+    $script:Settings.ShowDate = $script:menuDate.IsChecked
+    Apply-Mode
+    Tick-Handler
+    Save-Settings
+})
+$contextMenu.Items.Add($script:menuDate) | Out-Null
+
+$contextMenu.Items.Add((New-Object System.Windows.Controls.Separator)) | Out-Null
+
+# --- 配置スナップ ---
+$menuSnap = New-Object System.Windows.Controls.MenuItem
+$menuSnap.Header = "配置スナップ"
+
+$snapOptions = @(
+    @{L="左上"; V="top-left"},
+    @{L="上中"; V="top-center"},
+    @{L="右上"; V="top-right"},
+    @{L="左下"; V="bottom-left"},
+    @{L="中央"; V="center"},
+    @{L="右下"; V="bottom-right"}
+)
+foreach ($opt in $snapOptions) {
+    $item = New-Object System.Windows.Controls.MenuItem
+    $item.Header = $opt.L; $item.Tag = $opt.V
+    $item.Add_Click({ param($s,$e) Snap-Window $s.Tag })
+    $menuSnap.Items.Add($item) | Out-Null
+}
+$contextMenu.Items.Add($menuSnap) | Out-Null
 
 $contextMenu.Items.Add((New-Object System.Windows.Controls.Separator)) | Out-Null
 
@@ -547,7 +713,8 @@ $opacityValues = @(
     @{ Label = "85%"; Value = 0.85 },
     @{ Label = "70%"; Value = 0.70 },
     @{ Label = "50%"; Value = 0.50 },
-    @{ Label = "30%"; Value = 0.30 }
+    @{ Label = "30%"; Value = 0.30 },
+    @{ Label = "15%"; Value = 0.15 }
 )
 foreach ($ov in $opacityValues) {
     $mi = New-Object System.Windows.Controls.MenuItem
@@ -574,17 +741,21 @@ $menuReset.Add_Click({
     $script:Settings.ShowSeconds = $false
     $script:Settings.SmartOpacity = $false
     $script:Settings.ClickThrough = $false
+    $script:Settings.Topmost = $true
+    $script:Settings.ShowDate = $false
     $script:Settings.HourWidth = 4.0
     $script:Settings.HourLength = 45
     $script:Settings.MinuteWidth = 4.0
     $script:Settings.MinuteLength = 82
     $script:Settings.SecondWidth = 1.5
     $script:Settings.SecondLength = 72
-    $script:Settings.DigitalSize = 64
+    $script:Settings.DigitalSize = 64.0
     # メニューのチェック状態を全て同期
+    if ($script:menuTopmost) { $script:menuTopmost.IsChecked = $true }
     if ($script:menuSeconds) { $script:menuSeconds.IsChecked = $false }
     if ($script:menuSmartOp) { $script:menuSmartOp.IsChecked = $false }
     if ($script:menuClickThrough) { $script:menuClickThrough.IsChecked = $false }
+    if ($script:menuDate) { $script:menuDate.IsChecked = $false }
     Apply-Mode
     Apply-ClickThrough
     Tick-Handler
@@ -622,6 +793,41 @@ $window.Add_MouseLeftButtonDown({
     }
 })
 
+# ===== マウスホイール操作 =====
+$window.Add_PreviewMouseWheel({
+    param($sender, $e)
+    $e.Handled = $true
+    $ctrlDown = ([System.Windows.Input.Keyboard]::Modifiers -band [System.Windows.Input.ModifierKeys]::Control) -ne 0
+
+    if ($ctrlDown) {
+        # Ctrl + ホイール: 時計の拡大・縮小
+        if ($script:Settings.Mode -eq "digital") {
+            $step = if ($e.Delta -gt 0) { 4.0 } else { -4.0 }
+            $script:Settings.DigitalSize = [Math]::Max(28.0, [Math]::Min(140.0, $script:Settings.DigitalSize + $step))
+            $digitalTime.FontSize = $script:Settings.DigitalSize
+            $digitalDate.FontSize = [Math]::Max(11, [Math]::Round($script:Settings.DigitalSize * 0.28))
+            Fit-DigitalWindow $true
+        } else {
+            $step = if ($e.Delta -gt 0) { 12.0 } else { -12.0 }
+            # Width は未設定だと NaN のため ActualWidth で補う
+            $curW = if ([double]::IsNaN($window.Width)) { $window.ActualWidth } else { $window.Width }
+            $curH = if ([double]::IsNaN($window.Height)) { $window.ActualHeight } else { $window.Height }
+            $window.Width  = [Math]::Max(100, [Math]::Min(800, $curW + $step))
+            $window.Height = [Math]::Max(100, [Math]::Min(800, $curH + $step))
+            $script:Settings.Width  = [int]$window.Width
+            $script:Settings.Height = [int]$window.Height
+        }
+    } else {
+        # 通常ホイール: 透明度 5% 刻み
+        $step = if ($e.Delta -gt 0) { 0.05 } else { -0.05 }
+        $newOp = [Math]::Max(0.15, [Math]::Min(1.0, $script:Settings.Opacity + $step))
+        $script:Settings.Opacity = [Math]::Round($newOp, 2)
+        # スマート透過ON時もホバー中は 1.0 に固定されるため、調整値を直接反映して手応えを出す
+        $window.Opacity = $script:Settings.Opacity
+    }
+    Request-Save
+})
+
 # ===== ホバー & キーボードイベント =====
 $window.Add_MouseEnter({
     if ($script:Settings.SmartOpacity) {
@@ -646,6 +852,15 @@ $window.Add_KeyDown({
         Apply-ClickThrough
         Save-Settings
     }
+    # Ctrl + Shift + T: 最前面固定トグル
+    if (($e.KeyboardDevice.Modifiers -band [System.Windows.Input.ModifierKeys]::Control) -and 
+        ($e.KeyboardDevice.Modifiers -band [System.Windows.Input.ModifierKeys]::Shift) -and 
+        $e.Key -eq [System.Windows.Input.Key]::T) {
+        $script:Settings.Topmost = -not $script:Settings.Topmost
+        $window.Topmost = $script:Settings.Topmost
+        if ($script:menuTopmost) { $script:menuTopmost.IsChecked = $script:Settings.Topmost }
+        Save-Settings
+    }
 })
 
 # ===== ウィンドウイベント =====
@@ -663,9 +878,11 @@ $window.Add_Loaded({
     }
     
     Apply-Mode
+    if ($script:menuTopmost) { $script:menuTopmost.IsChecked = $script:Settings.Topmost }
     if ($script:menuSeconds) { $script:menuSeconds.IsChecked = $script:Settings.ShowSeconds }
     if ($script:menuSmartOp) { $script:menuSmartOp.IsChecked = $script:Settings.SmartOpacity }
     if ($script:menuClickThrough) { $script:menuClickThrough.IsChecked = $script:Settings.ClickThrough }
+    if ($script:menuDate) { $script:menuDate.IsChecked = $script:Settings.ShowDate }
     if ($script:menuStartup) { $script:menuStartup.IsChecked = (Test-Path $startupLnk) }
     
     Tick-Handler
@@ -674,6 +891,7 @@ $window.Add_Loaded({
     $script:timer.Interval = [TimeSpan]::FromSeconds(1)
     $script:timer.Add_Tick({ Tick-Handler })
     $script:timer.Start()
+    Adjust-TimerInterval
 })
 
 $window.Add_SizeChanged({
@@ -685,6 +903,9 @@ $window.Add_SizeChanged({
 $window.Add_Closing({
     if ($script:timer) {
         $script:timer.Stop()
+    }
+    if ($script:saveTimer) {
+        $script:saveTimer.Stop()
     }
     $script:Settings.Width = [int]$window.ActualWidth
     $script:Settings.Height = [int]$window.ActualHeight
