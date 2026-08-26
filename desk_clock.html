@@ -172,6 +172,18 @@
     white-space: nowrap;
   }
 
+  #digital-date {
+    font-size: 18px;
+    font-weight: 400;
+    letter-spacing: 0.08em;
+    color: var(--digital-color);
+    opacity: 0.7;
+    margin-top: 8px;
+    text-shadow: 0 0 12px var(--digital-shadow);
+    white-space: nowrap;
+    display: none;
+  }
+
   /* ===== Context Menu ===== */
   #context-menu {
     display: none;
@@ -246,6 +258,30 @@
   .theme-dot.light { background: #f0f0f8; border-color: rgba(100,100,150,0.3); }
   .theme-dot.blue { background: #102040; border-color: rgba(60,130,220,0.4); }
 
+  /* Snap Grid */
+  .snap-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 4px;
+    padding: 4px 16px 8px;
+  }
+  .snap-btn {
+    background: rgba(70, 70, 95, 0.25);
+    border: 1px solid var(--menu-border);
+    color: var(--menu-text);
+    padding: 5px 6px;
+    border-radius: 6px;
+    font-size: 11px;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.12s;
+  }
+  .snap-btn:hover {
+    background: var(--menu-hover);
+    border-color: var(--brand-accent);
+    color: #fff;
+  }
+
   /* Slider in menu */
   .menu-slider-row {
     display: flex;
@@ -305,6 +341,7 @@
   <canvas id="analog-clock"></canvas>
   <div id="digital-clock">
     <div id="digital-time">00:00</div>
+    <div id="digital-date">1月1日 (日)</div>
   </div>
 </div>
 
@@ -318,9 +355,21 @@
   <div class="menu-item" data-action="mode-digital">&#128290; デジタル</div>
   <div class="menu-separator"></div>
   <div class="menu-section-label">表示設定</div>
+  <div class="menu-item" data-action="toggle-topmost">&#128204; 最前面に固定 (Ctrl+Shift+T)</div>
   <div class="menu-item" data-action="toggle-seconds">&#9202; 秒針を表示</div>
   <div class="menu-item" data-action="toggle-smart-opacity">&#128065; スマート透過 (マウス連動)</div>
   <div class="menu-item" data-action="toggle-click-through">&#128070; クリックすり抜け (Ctrl+Shift+X)</div>
+  <div class="menu-item" data-action="toggle-date">&#128197; 日付・曜日を表示 (デジタル)</div>
+  <div class="menu-separator"></div>
+  <div class="menu-section-label">配置スナップ</div>
+  <div class="snap-grid">
+    <button class="snap-btn" data-snap="top-left">&#8598; 左上</button>
+    <button class="snap-btn" data-snap="top-center">&#8593; 上中</button>
+    <button class="snap-btn" data-snap="top-right">&#8599; 右上</button>
+    <button class="snap-btn" data-snap="bottom-left">&#8601; 左下</button>
+    <button class="snap-btn" data-snap="center">&#8853; 中央</button>
+    <button class="snap-btn" data-snap="bottom-right">&#8600; 右下</button>
+  </div>
   <div class="menu-separator"></div>
   <!-- Analog Specific Settings -->
   <div id="analog-settings-group">
@@ -375,7 +424,7 @@
   <div class="menu-section-label">透明度</div>
   <div class="menu-slider-row">
     <label>透明度</label>
-    <input type="range" id="opacity-slider" min="30" max="100" value="85">
+    <input type="range" id="opacity-slider" min="15" max="100" value="85">
     <span class="slider-value" id="opacity-value">85%</span>
   </div>
   <div class="menu-separator"></div>
@@ -393,6 +442,7 @@
   var PROP_TYPES = {
     mode: 'string', theme: 'string',
     opacity: 'int', showSeconds: 'bool', smartOpacity: 'bool', clickThrough: 'bool',
+    topmost: 'bool', showDate: 'bool', analogScale: 'int',
     hourWidth: 'float', hourLength: 'int', minuteWidth: 'float', minuteLength: 'int',
     secondWidth: 'float', secondLength: 'int', digitalSize: 'int',
     posX: 'float', posY: 'float'
@@ -403,6 +453,11 @@
     theme: 'dark',
     opacity: 85,
     showSeconds: false,
+    smartOpacity: false,
+    clickThrough: false,
+    topmost: false,
+    showDate: false,
+    analogScale: 100,
     hourWidth: 4.0,
     hourLength: 45,
     minuteWidth: 4.0,
@@ -410,8 +465,6 @@
     secondWidth: 1.5,
     secondLength: 72,
     digitalSize: 64,
-    smartOpacity: false,
-    clickThrough: false,
     posX: 0,
     posY: 0
   };
@@ -444,6 +497,7 @@
   var ctx = canvas.getContext('2d');
   var digitalClock = document.getElementById('digital-clock');
   var digitalTime = document.getElementById('digital-time');
+  var digitalDate = document.getElementById('digital-date');
   var menu = document.getElementById('context-menu');
   var opacitySlider = document.getElementById('opacity-slider');
   var opacityValue = document.getElementById('opacity-value');
@@ -497,37 +551,20 @@
     }
 
     // Update menu active states
-    var themeItems = menu.querySelectorAll('[data-action^="theme-"]');
-    for (var i = 0; i < themeItems.length; i++) {
-      var el = themeItems[i];
-      if (el.dataset.action === 'theme-' + state.theme) {
-        el.classList.add('active');
-      } else {
-        el.classList.remove('active');
-      }
-    }
-    var modeItems = menu.querySelectorAll('[data-action^="mode-"]');
-    for (var j = 0; j < modeItems.length; j++) {
-      var el2 = modeItems[j];
-      if (el2.dataset.action === 'mode-' + state.mode) {
-        el2.classList.add('active');
-      } else {
-        el2.classList.remove('active');
-      }
-    }
-    // Update toggles in menu
-    var secToggle = menu.querySelector('[data-action="toggle-seconds"]');
-    if (secToggle) {
-      if (state.showSeconds) secToggle.classList.add('active'); else secToggle.classList.remove('active');
-    }
-    var smartToggle = menu.querySelector('[data-action="toggle-smart-opacity"]');
-    if (smartToggle) {
-      if (state.smartOpacity) smartToggle.classList.add('active'); else smartToggle.classList.remove('active');
-    }
-    var ctToggle = menu.querySelector('[data-action="toggle-click-through"]');
-    if (ctToggle) {
-      if (state.clickThrough) ctToggle.classList.add('active'); else ctToggle.classList.remove('active');
-    }
+    var items = menu.querySelectorAll('.menu-item');
+    items.forEach(function(item) {
+      var act = item.getAttribute('data-action');
+      if (act === 'mode-analog') item.classList.toggle('active', state.mode === 'analog');
+      if (act === 'mode-digital') item.classList.toggle('active', state.mode === 'digital');
+      if (act === 'theme-dark') item.classList.toggle('active', state.theme === 'dark');
+      if (act === 'theme-light') item.classList.toggle('active', state.theme === 'light');
+      if (act === 'theme-blue') item.classList.toggle('active', state.theme === 'blue');
+      if (act === 'toggle-seconds') item.classList.toggle('active', state.showSeconds);
+      if (act === 'toggle-smart-opacity') item.classList.toggle('active', state.smartOpacity);
+      if (act === 'toggle-click-through') item.classList.toggle('active', state.clickThrough);
+      if (act === 'toggle-topmost') item.classList.toggle('active', state.topmost);
+      if (act === 'toggle-date') item.classList.toggle('active', state.showDate);
+    });
   }
 
   // ===== 透明度・クリック透過 =====
@@ -557,17 +594,76 @@
     toastTimer = setTimeout(function() { toastEl.classList.remove('show'); }, 3000);
   }
 
+  // 最前面固定はブラウザ側で強制できないため、状態のみ保持して案内を出す
+  function topmostMessage() {
+    if (!state.topmost) return '最前面固定: OFF';
+    return '最前面固定: ON（ブラウザ版は PowerToys の Win+Ctrl+T 併用が必要）';
+  }
+
   // ===== 位置管理 =====
   function updatePosition() {
     container.style.transform = 'translate(calc(-50% + ' + state.posX + 'px), calc(-50% + ' + state.posY + 'px))';
   }
 
+  // ===== デジタルサイズ・日付 =====
   function updateDigitalSize() {
-    // Proportional to viewport max size
-    var baseFontSize = Math.min(window.innerWidth * 0.32, window.innerHeight * 0.45);
-    var scale = (state.digitalSize || 64) / 64;
-    var fontSize = Math.max(20, Math.round(baseFontSize * scale));
-    digitalTime.style.fontSize = fontSize + 'px';
+    digitalTime.style.fontSize = state.digitalSize + 'px';
+    digitalDate.style.fontSize = Math.max(11, Math.round(state.digitalSize * 0.28)) + 'px';
+    digitalSizeSlider.value = state.digitalSize;
+    digitalSizeVal.textContent = state.digitalSize + 'px';
+  }
+
+  function updateDigitalDateVisibility() {
+    if (state.mode === 'digital' && state.showDate) {
+      digitalDate.style.display = 'block';
+    } else {
+      digitalDate.style.display = 'none';
+    }
+  }
+
+  // ===== スナップ配置 =====
+  function snapToPosition(snapType) {
+    var margin = 16;
+    var winW = window.innerWidth;
+    var winH = window.innerHeight;
+    var cW = container.offsetWidth || 200;
+    var cH = container.offsetHeight || 200;
+    
+    // コンテナ中心位置（(0,0)は画面中央）
+    var halfW = winW / 2;
+    var halfH = winH / 2;
+    var halfCW = cW / 2;
+    var halfCH = cH / 2;
+
+    switch (snapType) {
+      case 'top-left':
+        state.posX = -(halfW - halfCW - margin);
+        state.posY = -(halfH - halfCH - margin);
+        break;
+      case 'top-center':
+        state.posX = 0;
+        state.posY = -(halfH - halfCH - margin);
+        break;
+      case 'top-right':
+        state.posX = (halfW - halfCW - margin);
+        state.posY = -(halfH - halfCH - margin);
+        break;
+      case 'bottom-left':
+        state.posX = -(halfW - halfCW - margin);
+        state.posY = (halfH - halfCH - margin);
+        break;
+      case 'bottom-right':
+        state.posX = (halfW - halfCW - margin);
+        state.posY = (halfH - halfCH - margin);
+        break;
+      case 'center':
+      default:
+        state.posX = 0;
+        state.posY = 0;
+        break;
+    }
+    updatePosition();
+    saveState();
   }
 
   function applyMode() {
@@ -585,6 +681,7 @@
       canvas.style.display = 'none';
       digitalClock.style.display = 'flex';
       updateDigitalSize();
+      updateDigitalDateVisibility();
       updateDigital();
     }
     applyTheme();
@@ -594,7 +691,8 @@
   // ===== キャンバスリサイズ =====
   function resizeCanvas() {
     if (state.mode !== 'analog') return;
-    var size = Math.max(80, Math.min(window.innerWidth, window.innerHeight) * 0.98);
+    var scale = Math.max(40, Math.min(100, state.analogScale || 100)) / 100;
+    var size = Math.max(60, Math.min(window.innerWidth, window.innerHeight) * 0.98 * scale);
     var dpr = window.devicePixelRatio || 1;
     canvas.width = size * dpr;
     canvas.height = size * dpr;
@@ -699,19 +797,42 @@
   }
 
   // ===== デジタル時計 =====
+  var DAYS_JA = ['日', '月', '火', '水', '木', '金', '土'];
   function updateDigital() {
     var now = new Date();
     var h = String(now.getHours()).padStart(2, '0');
     var m = String(now.getMinutes()).padStart(2, '0');
     digitalTime.textContent = h + ':' + m;
+
+    if (state.showDate) {
+      var month = now.getMonth() + 1;
+      var date = now.getDate();
+      var day = DAYS_JA[now.getDay()];
+      digitalDate.textContent = month + '月' + date + '日 (' + day + ')';
+    }
   }
 
-  // ===== 毎秒更新 =====
+  // ===== スマート省電力タイマー =====
+  var tickTimeoutId = null;
   function tick() {
     if (state.mode === 'analog') {
       drawAnalog();
     } else {
       updateDigital();
+    }
+  }
+
+  function scheduleNextTick() {
+    if (tickTimeoutId) clearTimeout(tickTimeoutId);
+    tick();
+
+    // 秒針ONなら1秒間隔、秒針OFFなら次の分の00秒に同期（超省電力）
+    if (state.mode === 'analog' && state.showSeconds) {
+      tickTimeoutId = setTimeout(scheduleNextTick, 1000);
+    } else {
+      var now = new Date();
+      var msToNextMinute = (60 - now.getSeconds()) * 1000 - now.getMilliseconds() + 50;
+      tickTimeoutId = setTimeout(scheduleNextTick, Math.max(1000, msToNextMinute));
     }
   }
 
@@ -755,12 +876,15 @@
     if (action === 'mode-analog') {
       state.mode = 'analog';
       applyMode();
+      scheduleNextTick();
     } else if (action === 'mode-digital') {
       state.mode = 'digital';
       applyMode();
+      scheduleNextTick();
     } else if (action === 'toggle-seconds') {
       state.showSeconds = !state.showSeconds;
       applyTheme();
+      scheduleNextTick();
     } else if (action === 'toggle-smart-opacity') {
       state.smartOpacity = !state.smartOpacity;
       applyOpacity();
@@ -768,6 +892,15 @@
     } else if (action === 'toggle-click-through') {
       state.clickThrough = !state.clickThrough;
       applyClickThrough();
+      applyTheme();
+    } else if (action === 'toggle-topmost') {
+      state.topmost = !state.topmost;
+      applyTheme();
+      showToast(topmostMessage());
+    } else if (action === 'toggle-date') {
+      state.showDate = !state.showDate;
+      updateDigitalDateVisibility();
+      updateDigital();
       applyTheme();
     } else if (action.indexOf('theme-') === 0) {
       state.theme = action.replace('theme-', '');
@@ -777,6 +910,8 @@
       applyMode();
       applyOpacity();
       applyClickThrough();
+      updateDigitalDateVisibility();
+      scheduleNextTick();
     }
 
     saveState();
@@ -784,6 +919,49 @@
 
     setTimeout(function() { menu.style.display = 'none'; }, 120);
   });
+
+  // スナップボタン
+  menu.querySelectorAll('.snap-btn').forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      var snap = this.getAttribute('data-snap');
+      snapToPosition(snap);
+      menu.style.display = 'none';
+    });
+  });
+
+  // ===== マウスホイール操作（透明度 & サイズ微調整） =====
+  var wheelSaveTimer = null;
+  window.addEventListener('wheel', function(e) {
+    // メニュー内はスクロール・スライダー操作を優先させる
+    if (e.target.closest && e.target.closest('#context-menu')) return;
+    e.preventDefault();
+    if (e.ctrlKey) {
+      // Ctrl + ホイール: 時計の拡大・縮小
+      if (state.mode === 'digital') {
+        var newSize = state.digitalSize + (e.deltaY < 0 ? 4 : -4);
+        state.digitalSize = Math.max(28, Math.min(140, newSize));
+        updateDigitalSize();
+        showToast('サイズ: ' + state.digitalSize + 'px');
+      } else {
+        var newScale = (state.analogScale || 100) + (e.deltaY < 0 ? 5 : -5);
+        state.analogScale = Math.max(40, Math.min(100, newScale));
+        resizeCanvas();
+        showToast('サイズ: ' + state.analogScale + '%');
+      }
+    } else {
+      // 通常ホイール: 透明度 5% 刻み
+      var delta = e.deltaY < 0 ? 5 : -5;
+      var newOp = state.opacity + delta;
+      state.opacity = Math.max(15, Math.min(100, newOp));
+      applyOpacity();
+      opacitySlider.value = state.opacity;
+      opacityValue.textContent = state.opacity + '%';
+      showToast('透明度: ' + state.opacity + '%');
+    }
+    if (wheelSaveTimer) clearTimeout(wheelSaveTimer);
+    wheelSaveTimer = setTimeout(saveState, 400);
+  }, { passive: false });
 
   // ===== スライダー =====
   function bindSlider(slider, valEl, unit, stateKey, onChange) {
@@ -892,6 +1070,13 @@
       applyTheme();
       saveState();
     }
+    // Ctrl + Shift + T: 最前面固定トグル
+    if (e.ctrlKey && e.shiftKey && (e.key === 'T' || e.key === 't')) {
+      state.topmost = !state.topmost;
+      applyTheme();
+      showToast(topmostMessage());
+      saveState();
+    }
   });
 
   // ===== 初期化 =====
@@ -901,8 +1086,8 @@
   applyOpacity();
   applyClickThrough();
   updatePosition();
-  tick();
-  setInterval(tick, 1000);
+  updateDigitalDateVisibility();
+  scheduleNextTick();
 
 })();
 </script>
