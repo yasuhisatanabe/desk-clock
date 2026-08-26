@@ -49,6 +49,7 @@ $script:Settings = @{
     ClickThrough    = $false        # $true / $false (クリックすり抜け)
     Topmost         = $true         # $true / $false (最前面固定)
     ShowDate        = $false        # $true / $false (デジタル時日付・曜日表示)
+    Scale           = 100           # 40 - 360 (%) 表示倍率。アナログ・デジタル共通
     HourWidth       = 4.0           # 1.5 - 6.0
     HourLength      = 45            # 35 - 55 (%)
     MinuteWidth     = 4.0           # 1.5 - 6.0
@@ -62,6 +63,9 @@ $script:Settings = @{
     Top             = -1
 }
 
+# 表示倍率 100% のときのアナログ時計ウィンドウの一辺 (px)
+$script:BaseAnalogSize = 220.0
+
 # ===== テーマ定義 =====
 $script:Themes = @{
     dark = @{
@@ -71,7 +75,6 @@ $script:Themes = @{
         HandHour        = "#F2DCDCF0"
         HandMinute      = "#F2DCDCF0"
         HandSecond      = "#B3B4B4CF"
-        DigitalColor    = "#F2DCDCF0"
     }
     light = @{
         Face            = "#EBEBEBF0"
@@ -80,7 +83,6 @@ $script:Themes = @{
         HandHour        = "#F21E1E32"
         HandMinute      = "#F21E1E32"
         HandSecond      = "#A65A464B"
-        DigitalColor    = "#F21E1E32"
     }
     blue = @{
         Face            = "#EB0E1428"
@@ -89,7 +91,6 @@ $script:Themes = @{
         HandHour        = "#F28CBEF5"
         HandMinute      = "#F28CBEF5"
         HandSecond      = "#B36496C8"
-        DigitalColor    = "#F28CBEF5"
     }
 }
 
@@ -106,6 +107,7 @@ function Load-Settings {
             if ($null -ne $json.ClickThrough) { $script:Settings.ClickThrough = [bool]$json.ClickThrough }
             if ($null -ne $json.Topmost) { $script:Settings.Topmost = [bool]$json.Topmost }
             if ($null -ne $json.ShowDate) { $script:Settings.ShowDate = [bool]$json.ShowDate }
+            if ($null -ne $json.Scale) { $script:Settings.Scale = [int]$json.Scale }
             if ($null -ne $json.HourWidth) { $script:Settings.HourWidth = [double]$json.HourWidth }
             if ($null -ne $json.HourLength) { $script:Settings.HourLength = [int]$json.HourLength }
             if ($null -ne $json.MinuteWidth) { $script:Settings.MinuteWidth = [double]$json.MinuteWidth }
@@ -117,6 +119,10 @@ function Load-Settings {
             if ($null -ne $json.Height) { $script:Settings.Height = [int]$json.Height }
             if ($null -ne $json.Left) { $script:Settings.Left = [double]$json.Left }
             if ($null -ne $json.Top) { $script:Settings.Top = [double]$json.Top }
+            if ($null -eq $json.Scale -and $null -ne $json.Width) {
+                # Scale 導入前の設定ファイルからの移行
+                $script:Settings.Scale = [Math]::Max(40, [Math]::Min(360, [int][Math]::Round([int]$json.Width / $script:BaseAnalogSize * 100)))
+            }
         } catch {}
     }
 }
@@ -175,7 +181,7 @@ $xaml = @"
                 <TextBlock x:Name="DigitalTime" 
                            Text="00:00"
                            FontSize="64"
-                           FontWeight="Medium"
+                           FontWeight="SemiBold"
                            FontFamily="Segoe UI, Consolas"
                            HorizontalAlignment="Center"/>
                 <TextBlock x:Name="DigitalDate" 
@@ -358,8 +364,9 @@ function Apply-ClickThrough {
 function Snap-Window([string]$pos) {
     $workArea = [System.Windows.SystemParameters]::WorkArea
     $margin = 16.0
-    $w = $window.ActualWidth
-    $h = $window.ActualHeight
+    # レイアウト前は ActualWidth が 0 のため、指定済みの Width を優先する
+    $w = if ([double]::IsNaN($window.Width) -or $window.Width -le 0) { $window.ActualWidth } else { $window.Width }
+    $h = if ([double]::IsNaN($window.Height) -or $window.Height -le 0) { $window.ActualHeight } else { $window.Height }
     
     switch ($pos) {
         "top-left" {
@@ -416,6 +423,22 @@ function Fit-DigitalWindow([bool]$exact = $false) {
     $script:Settings.Height = [int]$window.Height
 }
 
+# ===== 表示倍率 =====
+function Apply-Scale {
+    $ratio = [Math]::Max(40, [Math]::Min(360, [int]$script:Settings.Scale)) / 100.0
+    if ($script:Settings.Mode -eq "analog") {
+        $size = [Math]::Max(100, [Math]::Min(800, $script:BaseAnalogSize * $ratio))
+        $window.Width  = $size
+        $window.Height = $size
+        $script:Settings.Width  = [int]$size
+        $script:Settings.Height = [int]$size
+    } else {
+        $digitalTime.FontSize = [Math]::Max(16, [Math]::Round($script:Settings.DigitalSize * $ratio))
+        $digitalDate.FontSize = [Math]::Max(11, [Math]::Round($digitalTime.FontSize * 0.28))
+        Fit-DigitalWindow $true
+    }
+}
+
 # ===== 表示モード切替 =====
 function Apply-Mode {
     $theme = Get-CurrentTheme
@@ -429,14 +452,11 @@ function Apply-Mode {
         $digitalBorder.Background = [System.Windows.Media.Brushes]::Transparent
         $digitalBorder.BorderBrush = [System.Windows.Media.Brushes]::Transparent
         $digitalBorder.BorderThickness = New-Object System.Windows.Thickness(0)
-        $digitalTime.Foreground = Get-BrushFromHex $theme.DigitalColor
-        $digitalTime.FontSize = $script:Settings.DigitalSize
-        
-        $digitalDate.Foreground = Get-BrushFromHex $theme.DigitalColor
-        $digitalDate.FontSize = [Math]::Max(11, [Math]::Round($script:Settings.DigitalSize * 0.28))
+        $digitalTime.Foreground = Get-BrushFromHex $theme.HandHour
+        $digitalDate.Foreground = Get-BrushFromHex $theme.HandHour
         $digitalDate.Visibility = if ($script:Settings.ShowDate) { "Visible" } else { "Collapsed" }
-        Fit-DigitalWindow $false
     }
+    Apply-Scale
 
     $window.Topmost = $script:Settings.Topmost
     Apply-WindowOpacity
@@ -750,6 +770,7 @@ $menuReset.Add_Click({
     $script:Settings.SecondWidth = 1.5
     $script:Settings.SecondLength = 72
     $script:Settings.DigitalSize = 64.0
+    $script:Settings.Scale = 100
     # メニューのチェック状態を全て同期
     if ($script:menuTopmost) { $script:menuTopmost.IsChecked = $true }
     if ($script:menuSeconds) { $script:menuSeconds.IsChecked = $false }
@@ -758,6 +779,7 @@ $menuReset.Add_Click({
     if ($script:menuDate) { $script:menuDate.IsChecked = $false }
     Apply-Mode
     Apply-ClickThrough
+    Snap-Window "top-right"
     Tick-Handler
     Save-Settings
 })
@@ -800,23 +822,10 @@ $window.Add_PreviewMouseWheel({
     $ctrlDown = ([System.Windows.Input.Keyboard]::Modifiers -band [System.Windows.Input.ModifierKeys]::Control) -ne 0
 
     if ($ctrlDown) {
-        # Ctrl + ホイール: 時計の拡大・縮小
-        if ($script:Settings.Mode -eq "digital") {
-            $step = if ($e.Delta -gt 0) { 4.0 } else { -4.0 }
-            $script:Settings.DigitalSize = [Math]::Max(28.0, [Math]::Min(140.0, $script:Settings.DigitalSize + $step))
-            $digitalTime.FontSize = $script:Settings.DigitalSize
-            $digitalDate.FontSize = [Math]::Max(11, [Math]::Round($script:Settings.DigitalSize * 0.28))
-            Fit-DigitalWindow $true
-        } else {
-            $step = if ($e.Delta -gt 0) { 12.0 } else { -12.0 }
-            # Width は未設定だと NaN のため ActualWidth で補う
-            $curW = if ([double]::IsNaN($window.Width)) { $window.ActualWidth } else { $window.Width }
-            $curH = if ([double]::IsNaN($window.Height)) { $window.ActualHeight } else { $window.Height }
-            $window.Width  = [Math]::Max(100, [Math]::Min(800, $curW + $step))
-            $window.Height = [Math]::Max(100, [Math]::Min(800, $curH + $step))
-            $script:Settings.Width  = [int]$window.Width
-            $script:Settings.Height = [int]$window.Height
-        }
+        # Ctrl + ホイール: 表示倍率をアナログ・デジタル共通で 5% 刻み調整
+        $step = if ($e.Delta -gt 0) { 5 } else { -5 }
+        $script:Settings.Scale = [Math]::Max(40, [Math]::Min(360, [int]$script:Settings.Scale + $step))
+        Apply-Scale
     } else {
         # 通常ホイール: 透明度 5% 刻み
         $step = if ($e.Delta -gt 0) { 0.05 } else { -0.05 }
@@ -870,14 +879,17 @@ $window.Add_Loaded({
     $window.Width = $script:Settings.Width
     $window.Height = $script:Settings.Height
     
+    # Apply-Mode (内部で Apply-Scale) がサイズを確定させてから位置を決める
+    Apply-Mode
+    
     if ($script:Settings.Left -ge 0 -and $script:Settings.Top -ge 0) {
         $window.Left = $script:Settings.Left
         $window.Top = $script:Settings.Top
     } else {
-        $window.WindowStartupLocation = "CenterScreen"
+        # 初回起動は既定でアナログ時計を画面右上に置く
+        Snap-Window "top-right"
     }
-    
-    Apply-Mode
+
     if ($script:menuTopmost) { $script:menuTopmost.IsChecked = $script:Settings.Topmost }
     if ($script:menuSeconds) { $script:menuSeconds.IsChecked = $script:Settings.ShowSeconds }
     if ($script:menuSmartOp) { $script:menuSmartOp.IsChecked = $script:Settings.SmartOpacity }
@@ -896,6 +908,11 @@ $window.Add_Loaded({
 
 $window.Add_SizeChanged({
     if ($script:Settings.Mode -eq "analog") {
+        # ドラッグでのリサイズと Ctrl+ホイールの倍率がずれないよう同期する
+        $side = [Math]::Min($window.ActualWidth, $window.ActualHeight)
+        if ($side -gt 0) {
+            $script:Settings.Scale = [Math]::Max(40, [Math]::Min(360, [int][Math]::Round($side / $script:BaseAnalogSize * 100)))
+        }
         Draw-AnalogClock
     }
 })
