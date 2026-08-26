@@ -63,8 +63,7 @@ $script:Settings = @{
 # ===== テーマ定義 =====
 $script:Themes = @{
     dark = @{
-        Face            = "#E6181820"
-        FaceBorder      = "#59DCDCF0"
+        Face            = "#EB181820"
         TickMajor       = "#F2DCDCF0"
         TickMinor       = "#80DCDCF0"
         HandHour        = "#F2DCDCF0"
@@ -73,8 +72,7 @@ $script:Themes = @{
         DigitalColor    = "#F2DCDCF0"
     }
     light = @{
-        Face            = "#E6EBEBF0"
-        FaceBorder      = "#591E1E32"
+        Face            = "#EBEBEBF0"
         TickMajor       = "#F21E1E32"
         TickMinor       = "#801E1E32"
         HandHour        = "#F21E1E32"
@@ -83,8 +81,7 @@ $script:Themes = @{
         DigitalColor    = "#F21E1E32"
     }
     blue = @{
-        Face            = "#E60E1428"
-        FaceBorder      = "#598CBEF5"
+        Face            = "#EB0E1428"
         TickMajor       = "#F28CBEF5"
         TickMinor       = "#808CBEF5"
         HandHour        = "#F28CBEF5"
@@ -221,22 +218,9 @@ function Draw-AnalogClock {
     $faceEllipse.Width = $r * 2
     $faceEllipse.Height = $r * 2
     $faceEllipse.Fill = Get-BrushFromHex $theme.Face
-    $faceEllipse.Stroke = Get-BrushFromHex $theme.FaceBorder
-    $faceEllipse.StrokeThickness = 2
     [System.Windows.Controls.Canvas]::SetLeft($faceEllipse, $cx - $r)
     [System.Windows.Controls.Canvas]::SetTop($faceEllipse, $cy - $r)
     $analogCanvas.Children.Add($faceEllipse) | Out-Null
-
-    # Inner ring
-    $innerRing = New-Object System.Windows.Shapes.Ellipse
-    $innerR = $r * 0.92
-    $innerRing.Width = $innerR * 2
-    $innerRing.Height = $innerR * 2
-    $innerRing.Stroke = Get-BrushFromHex $theme.FaceBorder
-    $innerRing.StrokeThickness = 0.5
-    [System.Windows.Controls.Canvas]::SetLeft($innerRing, $cx - $innerR)
-    [System.Windows.Controls.Canvas]::SetTop($innerRing, $cy - $innerR)
-    $analogCanvas.Children.Add($innerRing) | Out-Null
 
     # Tick marks
     for ($i = 0; $i -lt 60; $i++) {

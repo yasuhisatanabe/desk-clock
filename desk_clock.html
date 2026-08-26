@@ -630,7 +630,6 @@
     // テーマカラー取得
     computedStyle = null; // テーマ変更時に再取得
     var cFace = getColor('--face');
-    var cBorder = getColor('--face-border');
     var cTickMajor = getColor('--tick-major');
     var cTickMinor = getColor('--tick-minor');
     var cHandHour = getColor('--hand-hour');
@@ -642,20 +641,6 @@
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.fillStyle = cFace;
     ctx.fill();
-
-    // Face border
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.strokeStyle = cBorder;
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    // Inner ring
-    ctx.beginPath();
-    ctx.arc(cx, cy, r * 0.92, 0, Math.PI * 2);
-    ctx.strokeStyle = cBorder;
-    ctx.lineWidth = 0.5;
-    ctx.stroke();
 
     // Tick marks
     for (var i = 0; i < 60; i++) {
