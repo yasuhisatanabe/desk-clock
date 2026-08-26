@@ -14,7 +14,7 @@
 
   :root {
     color-scheme: dark;
-    /* Dark theme (default) - unified high readability */
+    /* Dark theme (default) */
     --bg: rgba(18, 18, 24, 0.88);
     --face: rgba(24, 24, 32, 0.92);
     --face-border: rgba(220, 220, 240, 0.35);
@@ -23,7 +23,6 @@
     --hand-hour: rgba(220, 220, 240, 0.95);
     --hand-minute: rgba(220, 220, 240, 0.95);
     --hand-second: rgba(180, 180, 205, 0.7);
-    --center-dot: rgba(220, 220, 240, 0.95);
     --digital-color: rgba(220, 220, 240, 0.95);
     --digital-shadow: rgba(100, 100, 160, 0.25);
     --menu-bg: rgba(20, 20, 28, 0.96);
@@ -45,7 +44,6 @@
     --hand-hour: rgba(30, 30, 50, 0.95);
     --hand-minute: rgba(30, 30, 50, 0.95);
     --hand-second: rgba(90, 70, 75, 0.65);
-    --center-dot: rgba(30, 30, 50, 0.95);
     --digital-color: rgba(30, 30, 50, 0.95);
     --digital-shadow: rgba(80, 80, 120, 0.15);
     --menu-bg: rgba(235, 235, 240, 0.97);
@@ -67,7 +65,6 @@
     --hand-hour: rgba(140, 190, 245, 0.95);
     --hand-minute: rgba(140, 190, 245, 0.95);
     --hand-second: rgba(100, 150, 200, 0.7);
-    --center-dot: rgba(140, 190, 245, 0.95);
     --digital-color: rgba(140, 190, 245, 0.95);
     --digital-shadow: rgba(40, 100, 200, 0.25);
     --menu-bg: rgba(10, 16, 36, 0.97);
@@ -311,6 +308,9 @@
   </div>
 </div>
 
+<!-- Toast Notification -->
+<div id="toast"></div>
+
 <!-- Context Menu -->
 <div id="context-menu">
   <div class="menu-section-label">表示モード</div>
@@ -386,8 +386,18 @@
 (function() {
   'use strict';
 
-  // ===== State =====
+  // ===== 設定管理 =====
   var STORAGE_KEY = 'desk_clock_settings';
+
+  // 各プロパティの型定義（loadState のパース用）
+  var PROP_TYPES = {
+    mode: 'string', theme: 'string',
+    opacity: 'int', showSeconds: 'bool', smartOpacity: 'bool', clickThrough: 'bool',
+    hourWidth: 'float', hourLength: 'int', minuteWidth: 'float', minuteLength: 'int',
+    secondWidth: 'float', secondLength: 'int', digitalSize: 'int',
+    posX: 'float', posY: 'float'
+  };
+
   var defaults = {
     mode: 'analog',
     theme: 'dark',
@@ -411,23 +421,15 @@
     state = Object.assign({}, defaults);
     try {
       var saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        var parsed = JSON.parse(saved);
-        if (parsed.mode) state.mode = parsed.mode;
-        if (parsed.theme) state.theme = parsed.theme;
-        if (parsed.opacity != null) state.opacity = parsed.opacity;
-        if (parsed.showSeconds != null) state.showSeconds = parsed.showSeconds;
-        if (parsed.smartOpacity != null) state.smartOpacity = parsed.smartOpacity;
-        if (parsed.clickThrough != null) state.clickThrough = parsed.clickThrough;
-        if (parsed.hourWidth != null) state.hourWidth = parseFloat(parsed.hourWidth);
-        if (parsed.hourLength != null) state.hourLength = parseInt(parsed.hourLength);
-        if (parsed.minuteWidth != null) state.minuteWidth = parseFloat(parsed.minuteWidth);
-        if (parsed.minuteLength != null) state.minuteLength = parseInt(parsed.minuteLength);
-        if (parsed.secondWidth != null) state.secondWidth = parseFloat(parsed.secondWidth);
-        if (parsed.secondLength != null) state.secondLength = parseInt(parsed.secondLength);
-        if (parsed.digitalSize != null) state.digitalSize = parseInt(parsed.digitalSize);
-        if (parsed.posX != null) state.posX = parseFloat(parsed.posX);
-        if (parsed.posY != null) state.posY = parseFloat(parsed.posY);
+      if (!saved) return;
+      var parsed = JSON.parse(saved);
+      for (var key in PROP_TYPES) {
+        if (parsed[key] == null) continue;
+        var type = PROP_TYPES[key];
+        if (type === 'string') state[key] = String(parsed[key]);
+        else if (type === 'int') state[key] = parseInt(parsed[key]);
+        else if (type === 'float') state[key] = parseFloat(parsed[key]);
+        else if (type === 'bool') state[key] = !!parsed[key];
       }
     } catch(e) {}
   }
@@ -462,10 +464,9 @@
   var digitalSizeSlider = document.getElementById('digital-size-slider');
   var digitalSizeVal = document.getElementById('digital-size-val');
 
-  // ===== Theme & Mode =====
+  // ===== テーマ・UI同期 =====
   function applyTheme() {
     document.documentElement.setAttribute('data-theme', state.theme);
-    document.body.style.opacity = state.opacity / 100;
     opacitySlider.value = state.opacity;
     opacityValue.textContent = state.opacity + '%';
 
@@ -529,6 +530,7 @@
     }
   }
 
+  // ===== 透明度・クリック透過 =====
   function applyOpacity() {
     if (state.smartOpacity) {
       container.style.opacity = (state.opacity / 100) * 0.45;
@@ -546,21 +548,17 @@
     }
   }
 
+  var toastEl = document.getElementById('toast');
+  var toastTimer = null;
   function showToast(msg) {
-    var toast = document.getElementById('toast');
-    if (!toast) {
-      toast = document.createElement('div');
-      toast.id = 'toast';
-      document.body.appendChild(toast);
-    }
-    toast.textContent = msg;
-    toast.classList.add('show');
-    setTimeout(function() { toast.classList.remove('show'); }, 3000);
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function() { toastEl.classList.remove('show'); }, 3000);
   }
 
+  // ===== 位置管理 =====
   function updatePosition() {
-    container.style.setProperty('--pos-x', (state.posX || 0) + 'px');
-    container.style.setProperty('--pos-y', (state.posY || 0) + 'px');
     container.style.transform = 'translate(calc(-50% + ' + state.posX + 'px), calc(-50% + ' + state.posY + 'px))';
   }
 
@@ -573,13 +571,15 @@
   }
 
   function applyMode() {
+    // classList で安全にモードクラスを切り替え（click-through 等を保持）
+    container.classList.remove('analog-mode', 'digital-mode');
     if (state.mode === 'analog') {
-      container.className = 'analog-mode';
+      container.classList.add('analog-mode');
       canvas.style.display = 'block';
       digitalClock.style.display = 'none';
       resizeCanvas();
     } else {
-      container.className = 'digital-mode';
+      container.classList.add('digital-mode');
       container.style.width = 'auto';
       container.style.height = 'auto';
       canvas.style.display = 'none';
@@ -591,31 +591,32 @@
     updatePosition();
   }
 
-  // ===== Canvas Resize =====
+  // ===== キャンバスリサイズ =====
   function resizeCanvas() {
     if (state.mode !== 'analog') return;
-    var size = Math.min(window.innerWidth, window.innerHeight) * 0.98;
-    var clampedSize = Math.max(80, size);
+    var size = Math.max(80, Math.min(window.innerWidth, window.innerHeight) * 0.98);
     var dpr = window.devicePixelRatio || 1;
-    canvas.width = clampedSize * dpr;
-    canvas.height = clampedSize * dpr;
-    canvas.style.width = clampedSize + 'px';
-    canvas.style.height = clampedSize + 'px';
-    // Update container size to match
-    container.style.width = clampedSize + 'px';
-    container.style.height = clampedSize + 'px';
+    canvas.width = size * dpr;
+    canvas.height = size * dpr;
+    canvas.style.width = size + 'px';
+    canvas.style.height = size + 'px';
+    container.style.width = size + 'px';
+    container.style.height = size + 'px';
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     drawAnalog();
   }
 
-  // ===== Analog Clock Drawing =====
+  // ===== アナログ時計描画 =====
+  var computedStyle = null;
   function getColor(varName) {
-    return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+    if (!computedStyle) computedStyle = getComputedStyle(document.documentElement);
+    return computedStyle.getPropertyValue(varName).trim();
   }
 
   function drawAnalog() {
-    var w = canvas.width / (window.devicePixelRatio || 1);
-    var h = canvas.height / (window.devicePixelRatio || 1);
+    var dpr = window.devicePixelRatio || 1;
+    var w = canvas.width / dpr;
+    var h = canvas.height / dpr;
     var cx = w / 2;
     var cy = h / 2;
     var r = Math.min(cx, cy) - 4;
@@ -626,17 +627,15 @@
 
     ctx.clearRect(0, 0, w, h);
 
-    // Colors
+    // テーマカラー取得
+    computedStyle = null; // テーマ変更時に再取得
     var cFace = getColor('--face');
     var cBorder = getColor('--face-border');
     var cTickMajor = getColor('--tick-major');
     var cTickMinor = getColor('--tick-minor');
-    var cNumOuter = getColor('--num-outer');
-    var cNumInner = getColor('--num-inner');
     var cHandHour = getColor('--hand-hour');
     var cHandMin = getColor('--hand-minute');
     var cHandSec = getColor('--hand-second');
-    var cCenter = getColor('--center-dot');
 
     // Face background
     ctx.beginPath();
@@ -714,7 +713,7 @@
     ctx.stroke();
   }
 
-  // ===== Digital Clock =====
+  // ===== デジタル時計 =====
   function updateDigital() {
     var now = new Date();
     var h = String(now.getHours()).padStart(2, '0');
@@ -722,7 +721,7 @@
     digitalTime.textContent = h + ':' + m;
   }
 
-  // ===== Tick =====
+  // ===== 毎秒更新 =====
   function tick() {
     if (state.mode === 'analog') {
       drawAnalog();
@@ -731,14 +730,16 @@
     }
   }
 
-  // ===== Context Menu =====
+  // ===== コンテキストメニュー =====
   document.addEventListener('contextmenu', function(e) {
     e.preventDefault();
+    // 一旦表示してサイズを測定
     menu.style.display = 'block';
     menu.style.left = '0px';
     menu.style.top = '0px';
     var menuW = menu.offsetWidth || 220;
     var menuH = menu.offsetHeight || 300;
+    // 画面端からはみ出さないよう位置調整
     var x = Math.max(10, Math.min(e.clientX, window.innerWidth - menuW - 10));
     var y = Math.max(10, Math.min(e.clientY, window.innerHeight - menuH - 10));
     menu.style.left = x + 'px';
@@ -799,20 +800,21 @@
     setTimeout(function() { menu.style.display = 'none'; }, 120);
   });
 
-  // Slider handlers
+  // ===== スライダー =====
   function bindSlider(slider, valEl, unit, stateKey, onChange) {
+    var isFloat = slider.step && slider.step.indexOf('.') !== -1;
     slider.addEventListener('input', function() {
-      state[stateKey] = (unit === 'px' && slider.step && slider.step.indexOf('.') !== -1) ? parseFloat(this.value) : parseInt(this.value);
+      state[stateKey] = isFloat ? parseFloat(this.value) : parseInt(this.value);
       valEl.textContent = this.value + unit;
       if (onChange) onChange();
       saveState();
     });
-    slider.addEventListener('click', function(e) { e.stopPropagation(); });
+    // メニュー閉じ防止
     slider.addEventListener('mousedown', function(e) { e.stopPropagation(); });
   }
 
   bindSlider(opacitySlider, opacityValue, '%', 'opacity', function() {
-    document.body.style.opacity = state.opacity / 100;
+    applyOpacity();
   });
 
   bindSlider(hourWidthSlider, hourWidthVal, 'px', 'hourWidth', function() {
@@ -843,7 +845,7 @@
     updateDigitalSize();
   });
 
-  // ===== Drag =====
+  // ===== ドラッグ移動 =====
   var isDragging = false;
   var dragStartX, dragStartY, initialPosX, initialPosY;
 
@@ -874,17 +876,16 @@
     }
   });
 
-  // ===== Window Resize =====
+  // ===== ウィンドウリサイズ =====
   window.addEventListener('resize', function() {
     if (state.mode === 'analog') {
       resizeCanvas();
-      drawAnalog();
     } else {
       updateDigitalSize();
     }
   });
 
-  // Mouse hover for smart opacity
+  // ===== スマート透過（マウスホバー連動） =====
   container.addEventListener('mouseenter', function() {
     if (state.smartOpacity) {
       container.style.opacity = '1.0';
@@ -897,8 +898,9 @@
     }
   });
 
-  // Global Hotkey (Ctrl + Shift + X) for Click-Through toggle
+  // ===== キーボードショートカット =====
   window.addEventListener('keydown', function(e) {
+    // Ctrl + Shift + X: クリックすり抜けトグル
     if (e.ctrlKey && e.shiftKey && (e.key === 'X' || e.key === 'x')) {
       state.clickThrough = !state.clickThrough;
       applyClickThrough();
@@ -907,7 +909,7 @@
     }
   });
 
-  // ===== Init =====
+  // ===== 初期化 =====
   document.title = '\u200E';
   loadState();
   applyMode();

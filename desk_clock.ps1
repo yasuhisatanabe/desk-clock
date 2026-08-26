@@ -70,7 +70,6 @@ $script:Themes = @{
         HandHour        = "#F2DCDCF0"
         HandMinute      = "#F2DCDCF0"
         HandSecond      = "#B3B4B4CF"
-        CenterDot       = "#F2DCDCF0"
         DigitalColor    = "#F2DCDCF0"
     }
     light = @{
@@ -81,7 +80,6 @@ $script:Themes = @{
         HandHour        = "#F21E1E32"
         HandMinute      = "#F21E1E32"
         HandSecond      = "#A65A464B"
-        CenterDot       = "#F21E1E32"
         DigitalColor    = "#F21E1E32"
     }
     blue = @{
@@ -92,7 +90,6 @@ $script:Themes = @{
         HandHour        = "#F28CBEF5"
         HandMinute      = "#F28CBEF5"
         HandSecond      = "#B36496C8"
-        CenterDot       = "#F28CBEF5"
         DigitalColor    = "#F28CBEF5"
     }
 }
@@ -320,7 +317,7 @@ function Update-DigitalClock {
     $digitalTime.Text = $now.ToString("HH:mm")
 }
 
-# ===== ウィンドウ透明度・クリック透過・パルス =====
+# ===== ウィンドウ透明度・クリック透過 =====
 function Apply-WindowOpacity {
     if ($script:Settings.SmartOpacity) {
         $window.Opacity = $script:Settings.Opacity * 0.45
@@ -467,71 +464,58 @@ $contextMenu.Items.Add($script:menuStartup) | Out-Null
 
 $contextMenu.Items.Add((New-Object System.Windows.Controls.Separator)) | Out-Null
 
-# --- 針の設定 ---
+# --- 針の設定（ヘルパー関数でDRY化） ---
+function New-OptionSubMenu {
+    param([string]$Header, [hashtable[]]$Options, [string]$SettingsKey, [string]$ValueType, [scriptblock]$OnChange)
+    $sub = New-Object System.Windows.Controls.MenuItem
+    $sub.Header = $Header
+    foreach ($opt in $Options) {
+        $item = New-Object System.Windows.Controls.MenuItem
+        $item.Header = $opt.L
+        $item.Tag = $opt.V
+        $item.Add_Click({
+            param($s, $e)
+            if ($ValueType -eq 'double') {
+                $script:Settings[$SettingsKey] = [double]$s.Tag
+            } else {
+                $script:Settings[$SettingsKey] = [int]$s.Tag
+            }
+            if ($OnChange) { & $OnChange }
+            Save-Settings
+        }.GetNewClosure())
+        $sub.Items.Add($item) | Out-Null
+    }
+    return $sub
+}
+
 $menuHands = New-Object System.Windows.Controls.MenuItem
 $menuHands.Header = "針の設定"
 
-$subHW = New-Object System.Windows.Controls.MenuItem
-$subHW.Header = "時針 太さ"
-foreach ($opt in @(@{L="極細 (1.5px)";V=1.5}, @{L="標準 (2.5px)";V=2.5}, @{L="太め (4.0px)";V=4.0}, @{L="極太 (6.0px)";V=6.0})) {
-    $item = New-Object System.Windows.Controls.MenuItem
-    $item.Header = $opt.L; $item.Tag = $opt.V
-    $item.Add_Click({ param($s,$e) $script:Settings.HourWidth = [double]$s.Tag; Tick-Handler; Save-Settings })
-    $subHW.Items.Add($item) | Out-Null
-}
-$menuHands.Items.Add($subHW) | Out-Null
+$tickOnChange = { Tick-Handler }
 
-$subHL = New-Object System.Windows.Controls.MenuItem
-$subHL.Header = "時針 長さ"
-foreach ($opt in @(@{L="短め (35%)";V=35}, @{L="標準 (45%)";V=45}, @{L="長め (55%)";V=55})) {
-    $item = New-Object System.Windows.Controls.MenuItem
-    $item.Header = $opt.L; $item.Tag = $opt.V
-    $item.Add_Click({ param($s,$e) $script:Settings.HourLength = [int]$s.Tag; Tick-Handler; Save-Settings })
-    $subHL.Items.Add($item) | Out-Null
-}
-$menuHands.Items.Add($subHL) | Out-Null
+$menuHands.Items.Add((New-OptionSubMenu -Header "時針 太さ" -Options @(
+    @{L="極細 (1.5px)";V=1.5}, @{L="標準 (2.5px)";V=2.5}, @{L="太め (4.0px)";V=4.0}, @{L="極太 (6.0px)";V=6.0}
+) -SettingsKey "HourWidth" -ValueType "double" -OnChange $tickOnChange)) | Out-Null
 
-$subMW = New-Object System.Windows.Controls.MenuItem
-$subMW.Header = "分針 太さ"
-foreach ($opt in @(@{L="極細 (1.5px)";V=1.5}, @{L="標準 (2.5px)";V=2.5}, @{L="太め (4.0px)";V=4.0}, @{L="極太 (6.0px)";V=6.0})) {
-    $item = New-Object System.Windows.Controls.MenuItem
-    $item.Header = $opt.L; $item.Tag = $opt.V
-    $item.Add_Click({ param($s,$e) $script:Settings.MinuteWidth = [double]$s.Tag; Tick-Handler; Save-Settings })
-    $subMW.Items.Add($item) | Out-Null
-}
-$menuHands.Items.Add($subMW) | Out-Null
+$menuHands.Items.Add((New-OptionSubMenu -Header "時針 長さ" -Options @(
+    @{L="短め (35%)";V=35}, @{L="標準 (45%)";V=45}, @{L="長め (55%)";V=55}
+) -SettingsKey "HourLength" -ValueType "int" -OnChange $tickOnChange)) | Out-Null
 
-$subML = New-Object System.Windows.Controls.MenuItem
-$subML.Header = "分針 長さ"
-foreach ($opt in @(@{L="短め (55%)";V=55}, @{L="標準 (65%)";V=65}, @{L="長め (80%)";V=80})) {
-    $item = New-Object System.Windows.Controls.MenuItem
-    $item.Header = $opt.L; $item.Tag = $opt.V
-    $item.Add_Click({ param($s,$e) $script:Settings.MinuteLength = [int]$s.Tag; Tick-Handler; Save-Settings })
-    $subML.Items.Add($item) | Out-Null
-}
-$menuHands.Items.Add($subML) | Out-Null
+$menuHands.Items.Add((New-OptionSubMenu -Header "分針 太さ" -Options @(
+    @{L="極細 (1.5px)";V=1.5}, @{L="標準 (2.5px)";V=2.5}, @{L="太め (4.0px)";V=4.0}, @{L="極太 (6.0px)";V=6.0}
+) -SettingsKey "MinuteWidth" -ValueType "double" -OnChange $tickOnChange)) | Out-Null
 
-# 秒針 太さ
-$subSW = New-Object System.Windows.Controls.MenuItem
-$subSW.Header = "秒針 太さ"
-foreach ($opt in @(@{L="極細 (1.0px)";V=1.0}, @{L="標準 (1.5px)";V=1.5}, @{L="太め (2.5px)";V=2.5}, @{L="極太 (4.0px)";V=4.0})) {
-    $item = New-Object System.Windows.Controls.MenuItem
-    $item.Header = $opt.L; $item.Tag = $opt.V
-    $item.Add_Click({ param($s,$e) $script:Settings.SecondWidth = [double]$s.Tag; Tick-Handler; Save-Settings })
-    $subSW.Items.Add($item) | Out-Null
-}
-$menuHands.Items.Add($subSW) | Out-Null
+$menuHands.Items.Add((New-OptionSubMenu -Header "分針 長さ" -Options @(
+    @{L="短め (55%)";V=55}, @{L="標準 (65%)";V=65}, @{L="長め (80%)";V=80}
+) -SettingsKey "MinuteLength" -ValueType "int" -OnChange $tickOnChange)) | Out-Null
 
-# 秒針 長さ
-$subSL = New-Object System.Windows.Controls.MenuItem
-$subSL.Header = "秒針 長さ"
-foreach ($opt in @(@{L="短め (60%)";V=60}, @{L="標準 (72%)";V=72}, @{L="長め (85%)";V=85})) {
-    $item = New-Object System.Windows.Controls.MenuItem
-    $item.Header = $opt.L; $item.Tag = $opt.V
-    $item.Add_Click({ param($s,$e) $script:Settings.SecondLength = [int]$s.Tag; Tick-Handler; Save-Settings })
-    $subSL.Items.Add($item) | Out-Null
-}
-$menuHands.Items.Add($subSL) | Out-Null
+$menuHands.Items.Add((New-OptionSubMenu -Header "秒針 太さ" -Options @(
+    @{L="極細 (1.0px)";V=1.0}, @{L="標準 (1.5px)";V=1.5}, @{L="太め (2.5px)";V=2.5}, @{L="極太 (4.0px)";V=4.0}
+) -SettingsKey "SecondWidth" -ValueType "double" -OnChange $tickOnChange)) | Out-Null
+
+$menuHands.Items.Add((New-OptionSubMenu -Header "秒針 長さ" -Options @(
+    @{L="短め (60%)";V=60}, @{L="標準 (72%)";V=72}, @{L="長め (85%)";V=85}
+) -SettingsKey "SecondLength" -ValueType "int" -OnChange $tickOnChange)) | Out-Null
 
 $contextMenu.Items.Add($menuHands) | Out-Null
 
@@ -587,7 +571,7 @@ foreach ($ov in $opacityValues) {
     $mi.Add_Click({
         param($sender, $e)
         $script:Settings.Opacity = [double]$sender.Tag
-        $window.Opacity = $script:Settings.Opacity
+        Apply-WindowOpacity
         Save-Settings
     })
     $menuOpacity.Items.Add($mi) | Out-Null
@@ -604,6 +588,8 @@ $menuReset.Add_Click({
     $script:Settings.Theme = "dark"
     $script:Settings.Opacity = 0.85
     $script:Settings.ShowSeconds = $false
+    $script:Settings.SmartOpacity = $false
+    $script:Settings.ClickThrough = $false
     $script:Settings.HourWidth = 4.0
     $script:Settings.HourLength = 45
     $script:Settings.MinuteWidth = 4.0
@@ -611,8 +597,12 @@ $menuReset.Add_Click({
     $script:Settings.SecondWidth = 1.5
     $script:Settings.SecondLength = 72
     $script:Settings.DigitalSize = 64
+    # メニューのチェック状態を全て同期
     if ($script:menuSeconds) { $script:menuSeconds.IsChecked = $false }
+    if ($script:menuSmartOp) { $script:menuSmartOp.IsChecked = $false }
+    if ($script:menuClickThrough) { $script:menuClickThrough.IsChecked = $false }
     Apply-Mode
+    Apply-ClickThrough
     Tick-Handler
     Save-Settings
 })
