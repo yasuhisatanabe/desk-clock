@@ -23,7 +23,6 @@
     --hand-hour: rgba(220, 220, 240, 0.95);
     --hand-minute: rgba(220, 220, 240, 0.95);
     --hand-second: rgba(180, 180, 205, 0.7);
-    --digital-color: rgba(220, 220, 240, 0.95);
     --digital-shadow: rgba(100, 100, 160, 0.25);
     --menu-bg: rgba(20, 20, 28, 0.96);
     --menu-text: #c0c0d8;
@@ -44,7 +43,6 @@
     --hand-hour: rgba(30, 30, 50, 0.95);
     --hand-minute: rgba(30, 30, 50, 0.95);
     --hand-second: rgba(90, 70, 75, 0.65);
-    --digital-color: rgba(30, 30, 50, 0.95);
     --digital-shadow: rgba(80, 80, 120, 0.15);
     --menu-bg: rgba(235, 235, 240, 0.97);
     --menu-text: #303045;
@@ -65,7 +63,6 @@
     --hand-hour: rgba(140, 190, 245, 0.95);
     --hand-minute: rgba(140, 190, 245, 0.95);
     --hand-second: rgba(100, 150, 200, 0.7);
-    --digital-color: rgba(140, 190, 245, 0.95);
     --digital-shadow: rgba(40, 100, 200, 0.25);
     --menu-bg: rgba(10, 16, 36, 0.97);
     --menu-text: #85aed8;
@@ -163,9 +160,10 @@
 
   #digital-time {
     font-size: 64px;
-    font-weight: 500;
+    /* 針は太さ4pxの実線なので、同じ色でも細いウェイトだと薄く見える。線量を合わせる */
+    font-weight: 600;
     letter-spacing: 0.04em;
-    color: var(--digital-color);
+    color: var(--hand-hour);
     text-shadow: 0 0 20px var(--digital-shadow);
     font-variant-numeric: tabular-nums;
     line-height: 1;
@@ -176,7 +174,7 @@
     font-size: 18px;
     font-weight: 400;
     letter-spacing: 0.08em;
-    color: var(--digital-color);
+    color: var(--hand-hour);
     opacity: 0.7;
     margin-top: 8px;
     text-shadow: 0 0 12px var(--digital-shadow);
@@ -439,10 +437,14 @@
   var STORAGE_KEY = 'desk_clock_settings';
 
   // 各プロパティの型定義（loadState のパース用）
+  var BASE_DIGITAL_SIZE = 64;
+  var SCALE_MIN = 40;
+  var SCALE_MAX = 360;
+
   var PROP_TYPES = {
     mode: 'string', theme: 'string',
     opacity: 'int', showSeconds: 'bool', smartOpacity: 'bool', clickThrough: 'bool',
-    topmost: 'bool', showDate: 'bool', analogScale: 'int',
+    topmost: 'bool', showDate: 'bool', scale: 'int',
     hourWidth: 'float', hourLength: 'int', minuteWidth: 'float', minuteLength: 'int',
     secondWidth: 'float', secondLength: 'int', digitalSize: 'int',
     posX: 'float', posY: 'float'
@@ -457,7 +459,7 @@
     clickThrough: false,
     topmost: false,
     showDate: false,
-    analogScale: 100,
+    scale: 100,
     hourWidth: 4.0,
     hourLength: 45,
     minuteWidth: 4.0,
@@ -470,11 +472,12 @@
   };
   var state = {};
 
+  // 戻り値: 保存済み設定を復元したか（false なら初回起動）
   function loadState() {
     state = Object.assign({}, defaults);
     try {
       var saved = localStorage.getItem(STORAGE_KEY);
-      if (!saved) return;
+      if (!saved) return false;
       var parsed = JSON.parse(saved);
       for (var key in PROP_TYPES) {
         if (parsed[key] == null) continue;
@@ -484,7 +487,9 @@
         else if (type === 'float') state[key] = parseFloat(parsed[key]);
         else if (type === 'bool') state[key] = !!parsed[key];
       }
+      return true;
     } catch(e) {}
+    return false;
   }
 
   function saveState() {
@@ -539,7 +544,7 @@
     secLenVal.textContent = state.secondLength + '%';
     digitalSizeSlider.value = state.digitalSize;
     digitalSizeVal.textContent = state.digitalSize + 'px';
-    digitalTime.style.fontSize = state.digitalSize + 'px';
+    digitalTime.style.fontSize = effectiveDigitalSize() + 'px';
 
     // Toggle menu group visibility by mode
     if (state.mode === 'analog') {
@@ -606,11 +611,26 @@
   }
 
   // ===== デジタルサイズ・日付 =====
+  function effectiveDigitalSize() {
+    var ratio = Math.max(SCALE_MIN, Math.min(SCALE_MAX, state.scale || 100)) / 100;
+    return Math.max(16, Math.round(state.digitalSize * ratio));
+  }
+
   function updateDigitalSize() {
-    digitalTime.style.fontSize = state.digitalSize + 'px';
-    digitalDate.style.fontSize = Math.max(11, Math.round(state.digitalSize * 0.28)) + 'px';
+    var fs = effectiveDigitalSize();
+    digitalTime.style.fontSize = fs + 'px';
+    digitalDate.style.fontSize = Math.max(11, Math.round(fs * 0.28)) + 'px';
     digitalSizeSlider.value = state.digitalSize;
     digitalSizeVal.textContent = state.digitalSize + 'px';
+  }
+
+  // 表示倍率をモードによらず同じ操作で反映する
+  function applyScale() {
+    if (state.mode === 'analog') {
+      resizeCanvas();
+    } else {
+      updateDigitalSize();
+    }
   }
 
   function updateDigitalDateVisibility() {
@@ -662,6 +682,11 @@
         state.posY = 0;
         break;
     }
+    // 時計がウィンドウより大きい場合ははみ出さないよう中央寄せに丸める
+    var maxX = Math.max(0, halfW - halfCW - margin);
+    var maxY = Math.max(0, halfH - halfCH - margin);
+    state.posX = Math.max(-maxX, Math.min(maxX, state.posX));
+    state.posY = Math.max(-maxY, Math.min(maxY, state.posY));
     updatePosition();
     saveState();
   }
@@ -691,8 +716,9 @@
   // ===== キャンバスリサイズ =====
   function resizeCanvas() {
     if (state.mode !== 'analog') return;
-    var scale = Math.max(40, Math.min(100, state.analogScale || 100)) / 100;
-    var size = Math.max(60, Math.min(window.innerWidth, window.innerHeight) * 0.98 * scale);
+    var ratio = Math.max(SCALE_MIN, Math.min(SCALE_MAX, state.scale || 100)) / 100;
+    // アナログはウィンドウ内に収める必要があるため 100% で頭打ちになる
+    var size = Math.max(60, Math.min(window.innerWidth, window.innerHeight) * 0.98 * Math.min(ratio, 1));
     var dpr = window.devicePixelRatio || 1;
     canvas.width = size * dpr;
     canvas.height = size * dpr;
@@ -911,6 +937,7 @@
       applyOpacity();
       applyClickThrough();
       updateDigitalDateVisibility();
+      snapToPosition('top-right');
       scheduleNextTick();
     }
 
@@ -937,18 +964,11 @@
     if (e.target.closest && e.target.closest('#context-menu')) return;
     e.preventDefault();
     if (e.ctrlKey) {
-      // Ctrl + ホイール: 時計の拡大・縮小
-      if (state.mode === 'digital') {
-        var newSize = state.digitalSize + (e.deltaY < 0 ? 4 : -4);
-        state.digitalSize = Math.max(28, Math.min(140, newSize));
-        updateDigitalSize();
-        showToast('サイズ: ' + state.digitalSize + 'px');
-      } else {
-        var newScale = (state.analogScale || 100) + (e.deltaY < 0 ? 5 : -5);
-        state.analogScale = Math.max(40, Math.min(100, newScale));
-        resizeCanvas();
-        showToast('サイズ: ' + state.analogScale + '%');
-      }
+      // Ctrl + ホイール: 表示倍率をアナログ・デジタル共通で 5% 刻み調整
+      var newScale = (state.scale || 100) + (e.deltaY < 0 ? 5 : -5);
+      state.scale = Math.max(SCALE_MIN, Math.min(SCALE_MAX, newScale));
+      applyScale();
+      showToast('サイズ: ' + state.scale + '%');
     } else {
       // 通常ホイール: 透明度 5% 刻み
       var delta = e.deltaY < 0 ? 5 : -5;
@@ -1081,12 +1101,17 @@
 
   // ===== 初期化 =====
   document.title = '\u200E';
-  loadState();
+  var restored = loadState();
   applyMode();
   applyOpacity();
   applyClickThrough();
-  updatePosition();
   updateDigitalDateVisibility();
+  if (restored) {
+    updatePosition();
+  } else {
+    // 初回起動は既定でアナログ時計を画面右上に置く
+    snapToPosition('top-right');
+  }
   scheduleNextTick();
 
 })();
