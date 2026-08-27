@@ -83,6 +83,7 @@ $script:Settings = @{
     ClickThrough    = $false        # $true / $false (クリックすり抜け)
     Topmost         = $true         # $true / $false (最前面固定)
     ShowDate        = $false        # $true / $false (デジタル時日付・曜日表示)
+    ShowPlate       = $false        # $true / $false (デジタル時の背景板)
     Scale           = 100           # 40 - 360 (%) 表示倍率。アナログ・デジタル共通
     HourWidth       = 4.0           # 1.5 - 6.0
     HourLength      = 45            # 35 - 55 (%)
@@ -91,20 +92,20 @@ $script:Settings = @{
     SecondWidth     = 1.5           # 1.0 - 4.0
     SecondLength    = 72            # 60 - 85 (%)
     DigitalSize     = 64.0          # 36 - 128 (px)
-    Width           = 110
-    Height          = 110
+    Width           = 220
+    Height          = 220
     Left            = $null         # $null = 未設定（初回は画面右上）。負の値も正当な座標
     Top             = $null
 }
 
 # ===== 寸法・範囲の定数 =====
 # 表示倍率 100% のときのアナログ時計ウィンドウの一辺 (px)
-$script:BaseAnalogSize = 110.0
+$script:BaseAnalogSize = 220.0
 # ウィンドウの最小の一辺 (px)
 $script:MinWindowSide = 60
 # アナログはウィンドウ下限より小さくできないため、実際に効かない倍率を
 # レンジから外して「回しても変わらない」帯をなくす
-$script:MinAnalogScale = [int][Math]::Ceiling($script:MinWindowSide / $script:BaseAnalogSize * 100)
+$script:MinAnalogScale = [Math]::Max(40, [int][Math]::Ceiling($script:MinWindowSide / $script:BaseAnalogSize * 100))
 
 # デジタルはウィンドウを文字にぴったり合わせる。
 # 余白を持たせると、画面の隅にスナップしても文字が隅から離れてしまう
@@ -115,7 +116,7 @@ $script:MinDigitalH = 60
 
 # クリック・右クリック・ドラッグを受け付ける範囲（文字／文字盤に対する比率）。
 # ウィンドウ全面で受けると背後のアプリケーションを選択できなくなるため中央だけに絞る
-$script:HitRatio = 0.60
+$script:HitRatio = 0.45
 
 # 透明度の範囲と、時針・分針を見分けるための最小の長さ差 (%)
 $script:OpacityMin = 0.15
@@ -171,6 +172,7 @@ function Load-Settings {
             if ($null -ne $json.ClickThrough) { $script:Settings.ClickThrough = [bool]$json.ClickThrough }
             if ($null -ne $json.Topmost) { $script:Settings.Topmost = [bool]$json.Topmost }
             if ($null -ne $json.ShowDate) { $script:Settings.ShowDate = [bool]$json.ShowDate }
+            if ($null -ne $json.ShowPlate) { $script:Settings.ShowPlate = [bool]$json.ShowPlate }
             if ($null -ne $json.Scale) { $script:Settings.Scale = [int]$json.Scale }
             if ($null -ne $json.HourWidth) { $script:Settings.HourWidth = [double]$json.HourWidth }
             if ($null -ne $json.HourLength) { $script:Settings.HourLength = [int]$json.HourLength }
@@ -239,7 +241,7 @@ $xaml = @"
     ShowInTaskbar="True"
     ResizeMode="NoResize"
     MinWidth="60" MinHeight="60"
-    Width="110" Height="110">
+    Width="220" Height="220">
 
     <!-- Background を持たせないことで、描画のない領域のクリックは背後のウィンドウへ抜ける -->
     <Grid x:Name="MainGrid">
@@ -568,7 +570,9 @@ function Apply-DigitalHalo {
             $tb.Effect = $eff
         }
         $eff.Color = $color
-        $eff.BlurRadius = [Math]::Max(4.0, $tb.FontSize * 0.16)
+        # ぼかしを広げると輪郭が拡散して薄くなる。文字の縁に密度を集めて
+        # 白背景・黒背景のどちらでも輪郭が立つようにする
+        $eff.BlurRadius = [Math]::Max(2.5, $tb.FontSize * 0.07)
     }
 }
 
@@ -674,7 +678,14 @@ function Apply-Mode {
     } else {
         $analogCanvas.Visibility = "Collapsed"
         $digitalBorder.Visibility = "Visible"
-        $digitalBorder.Background = [System.Windows.Media.Brushes]::Transparent
+        if ($script:Settings.ShowPlate) {
+            # 背後が白いウィンドウでも確実に読めるよう、文字盤と同じ色の板を敷く
+            $digitalBorder.Background = Get-BrushFromHex $theme.Face
+            $digitalBorder.Padding = New-Object System.Windows.Thickness(18, 12, 18, 12)
+        } else {
+            $digitalBorder.Background = [System.Windows.Media.Brushes]::Transparent
+            $digitalBorder.Padding = New-Object System.Windows.Thickness(4)
+        }
         $digitalBorder.BorderBrush = [System.Windows.Media.Brushes]::Transparent
         $digitalBorder.BorderThickness = New-Object System.Windows.Thickness(0)
         $digitalTime.Foreground = Get-BrushFromHex $theme.HandHour
@@ -686,6 +697,8 @@ function Apply-Mode {
 
     # 秒針はアナログ専用。デジタルでは押しても効かないため無効化する
     if ($script:menuSeconds) { $script:menuSeconds.IsEnabled = ($script:Settings.Mode -eq "analog") }
+    if ($script:menuDate)  { $script:menuDate.IsEnabled  = ($script:Settings.Mode -eq "digital") }
+    if ($script:menuPlate) { $script:menuPlate.IsEnabled = ($script:Settings.Mode -eq "digital") }
 
     $window.Topmost = $script:Settings.Topmost
     Apply-WindowOpacity
@@ -804,6 +817,19 @@ $script:menuDate.Add_Click({
     Save-Settings
 })
 $contextMenu.Items.Add($script:menuDate) | Out-Null
+
+# --- デジタルの背景板 ---
+$script:menuPlate = New-Object System.Windows.Controls.MenuItem
+$script:menuPlate.Header = "背景を敷く (デジタル)"
+$script:menuPlate.IsCheckable = $true
+$script:menuPlate.IsChecked = $script:Settings.ShowPlate
+$script:menuPlate.Add_Click({
+    $script:Settings.ShowPlate = $script:menuPlate.IsChecked
+    Apply-Mode
+    Tick-Handler
+    Save-Settings
+})
+$contextMenu.Items.Add($script:menuPlate) | Out-Null
 
 $contextMenu.Items.Add((New-Object System.Windows.Controls.Separator)) | Out-Null
 
@@ -992,6 +1018,7 @@ $menuReset.Add_Click({
     $script:Settings.ClickThrough = $false
     $script:Settings.Topmost = $true
     $script:Settings.ShowDate = $false
+    $script:Settings.ShowPlate = $false
     $script:Settings.HourWidth = 4.0
     $script:Settings.HourLength = 45
     $script:Settings.MinuteWidth = 4.0
@@ -1006,6 +1033,7 @@ $menuReset.Add_Click({
     if ($script:menuSmartOp) { $script:menuSmartOp.IsChecked = $false }
     if ($script:menuClickThrough) { $script:menuClickThrough.IsChecked = $false }
     if ($script:menuDate) { $script:menuDate.IsChecked = $false }
+    if ($script:menuPlate) { $script:menuPlate.IsChecked = $false }
     Apply-Mode
     Apply-ClickThrough
     Snap-Window "top-right"
@@ -1125,6 +1153,7 @@ if ($script:menuSeconds) { $script:menuSeconds.IsChecked = $script:Settings.Show
 if ($script:menuSmartOp) { $script:menuSmartOp.IsChecked = $script:Settings.SmartOpacity }
 if ($script:menuClickThrough) { $script:menuClickThrough.IsChecked = $script:Settings.ClickThrough }
 if ($script:menuDate) { $script:menuDate.IsChecked = $script:Settings.ShowDate }
+if ($script:menuPlate) { $script:menuPlate.IsChecked = $script:Settings.ShowPlate }
 if ($script:menuStartup) { $script:menuStartup.IsChecked = (Test-Path $startupLnk) }
 
 Tick-Handler
