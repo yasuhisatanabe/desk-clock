@@ -91,34 +91,41 @@ $script:Settings = @{
     SecondWidth     = 1.5           # 1.0 - 4.0
     SecondLength    = 72            # 60 - 85 (%)
     DigitalSize     = 64.0          # 36 - 128 (px)
-    Width           = 220
-    Height          = 220
+    Width           = 110
+    Height          = 110
     Left            = $null         # $null = 未設定（初回は画面右上）。負の値も正当な座標
     Top             = $null
 }
 
+# ===== 寸法・範囲の定数 =====
 # 表示倍率 100% のときのアナログ時計ウィンドウの一辺 (px)
-$script:BaseAnalogSize = 220.0
-
-# デジタル表示で文字の外側に確保する操作用の余白と、ウィンドウの最小サイズ (px)
-$script:MinWindowSide = 120
-# アナログはウィンドウ下限 (MinWindowSide) より小さくできないため、
-# 実際に効かない倍率をレンジから外して「回しても変わらない」帯をなくす
+$script:BaseAnalogSize = 110.0
+# ウィンドウの最小の一辺 (px)
+$script:MinWindowSide = 60
+# アナログはウィンドウ下限より小さくできないため、実際に効かない倍率を
+# レンジから外して「回しても変わらない」帯をなくす
 $script:MinAnalogScale = [int][Math]::Ceiling($script:MinWindowSide / $script:BaseAnalogSize * 100)
 
-# スマート透過の減光率と、すり抜け中に守る不透明度の下限
+# デジタルはウィンドウを文字にぴったり合わせる。
+# 余白を持たせると、画面の隅にスナップしても文字が隅から離れてしまう
+$script:HitPadX = 8
+$script:HitPadY = 8
+$script:MinDigitalW = 60
+$script:MinDigitalH = 60
+
+# クリック・右クリック・ドラッグを受け付ける範囲（文字／文字盤に対する比率）。
+# ウィンドウ全面で受けると背後のアプリケーションを選択できなくなるため中央だけに絞る
+$script:HitRatio = 0.60
+
 # 透明度の範囲と、時針・分針を見分けるための最小の長さ差 (%)
 $script:OpacityMin = 0.15
 $script:OpacityMax = 0.90
 $script:MinHandGap = 10
 
+# スマート透過の減光率と、すり抜け中に守る不透明度の下限
 $script:SmartOpacityFactor = 0.45
 $script:SmartOpacityMin = 0.25
 $script:ClickThroughMinOpacity = 0.35
-$script:HitPadX = 48
-$script:HitPadY = 40
-$script:MinDigitalW = 220
-$script:MinDigitalH = 150
 
 # ===== テーマ定義 =====
 $script:Themes = @{
@@ -231,20 +238,23 @@ $xaml = @"
     Topmost="True"
     ShowInTaskbar="True"
     ResizeMode="NoResize"
-    MinWidth="120" MinHeight="120"
-    Width="220" Height="220">
+    MinWidth="60" MinHeight="60"
+    Width="110" Height="110">
 
-    <Grid x:Name="MainGrid" Background="#01000000">
+    <!-- Background を持たせないことで、描画のない領域のクリックは背後のウィンドウへ抜ける -->
+    <Grid x:Name="MainGrid">
         <!-- Analog Clock Canvas -->
         <Canvas x:Name="AnalogCanvas" 
                 HorizontalAlignment="Stretch" 
                 VerticalAlignment="Stretch"
+                IsHitTestVisible="False"
                 Visibility="Collapsed"/>
         
         <!-- Digital Clock -->
         <Border x:Name="DigitalBorder" 
                 CornerRadius="16" 
-                Padding="32,24"
+                Padding="4"
+                IsHitTestVisible="False"
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center"
                 Visibility="Collapsed">
@@ -267,6 +277,14 @@ $xaml = @"
                            Visibility="Collapsed"/>
             </StackPanel>
         </Border>
+
+        <!-- 操作を受け付ける領域。Fill のアルファ 1 でヒットテストだけ有効にし視覚的には不可視 -->
+        <Ellipse x:Name="HitAnalog" Fill="#01000000"
+                 HorizontalAlignment="Center" VerticalAlignment="Center"
+                 Width="0" Height="0" Visibility="Collapsed"/>
+        <Rectangle x:Name="HitDigital" Fill="#01000000"
+                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                   Width="0" Height="0" Visibility="Collapsed"/>
     </Grid>
 </Window>
 "@
@@ -280,6 +298,8 @@ $analogCanvas = $window.FindName("AnalogCanvas")
 $digitalBorder = $window.FindName("DigitalBorder")
 $digitalTime = $window.FindName("DigitalTime")
 $digitalDate = $window.FindName("DigitalDate")
+$hitAnalog = $window.FindName("HitAnalog")
+$hitDigital = $window.FindName("HitDigital")
 
 # ===== ヘルパー関数 =====
 function Get-BrushFromHex([string]$hex) {
@@ -561,6 +581,8 @@ function Fit-DigitalWindow([bool]$exact = $false) {
         $digitalBorder.Measure($inf)
         $rawW = $digitalBorder.DesiredSize.Width
         $rawH = $digitalBorder.DesiredSize.Height
+        $script:DigitalRawW = $rawW
+        $script:DigitalRawH = $rawH
         $digitalBorder.InvalidateMeasure()
     } catch { return }
     # 計測できていない (レイアウト未実行など) ときに極小ウィンドウへ潰さない
@@ -581,6 +603,27 @@ function Fit-DigitalWindow([bool]$exact = $false) {
     $script:Settings.Height = [int]$window.Height
 }
 
+# ===== 当たり判定領域 =====
+# 時計の実体より小さい範囲でだけクリックを受け付ける。
+# ウィンドウ全面で受けると、時計に重なった背後のアプリケーションを選択できなくなる
+function Apply-HitArea {
+    if ($script:Settings.Mode -eq "analog") {
+        $hitDigital.Visibility = "Collapsed"
+        $side = if ($script:AnalogSide -gt 0) { $script:AnalogSide } else { [double]$script:Settings.Width }
+        $d = [Math]::Max(24.0, $side * $script:HitRatio)
+        $hitAnalog.Width = $d
+        $hitAnalog.Height = $d
+        $hitAnalog.Visibility = "Visible"
+    } else {
+        $hitAnalog.Visibility = "Collapsed"
+        $w = if ($script:DigitalRawW -gt 0) { $script:DigitalRawW } else { [double]$script:Settings.Width }
+        $h = if ($script:DigitalRawH -gt 0) { $script:DigitalRawH } else { [double]$script:Settings.Height }
+        $hitDigital.Width  = [Math]::Max(24.0, $w * $script:HitRatio)
+        $hitDigital.Height = [Math]::Max(24.0, $h * $script:HitRatio)
+        $hitDigital.Visibility = "Visible"
+    }
+}
+
 # ===== 表示倍率 =====
 function Apply-Scale {
     if ($script:Settings.Mode -eq "analog" -and $script:Settings.Scale -lt $script:MinAnalogScale) {
@@ -589,6 +632,7 @@ function Apply-Scale {
     $ratio = [Math]::Max(40, [Math]::Min(360, [int]$script:Settings.Scale)) / 100.0
     if ($script:Settings.Mode -eq "analog") {
         $size = [Math]::Max($script:MinWindowSide, [Math]::Min(800, $script:BaseAnalogSize * $ratio))
+        $script:AnalogSide = $size
         $window.Width  = $size
         $window.Height = $size
         $script:Settings.Width  = [int]$size
@@ -599,6 +643,7 @@ function Apply-Scale {
         Apply-DigitalHalo
         Fit-DigitalWindow $true
     }
+    Apply-HitArea
 }
 
 # ===== 位置の復元 =====
