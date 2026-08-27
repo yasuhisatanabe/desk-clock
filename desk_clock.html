@@ -151,8 +151,9 @@
     justify-content: center;
     background: transparent;
     border: none;
-    /* 文字の外側にドラッグ用の余白を残す（PS1版の当たり判定と揃える） */
-    padding: 24px 32px;
+    /* 余白を大きく取ると画面の隅にスナップしても文字が隅から離れてしまう。
+       掴める最小限に留める */
+    padding: 8px 12px;
     max-width: 98vw;
     max-height: 98vh;
   }
