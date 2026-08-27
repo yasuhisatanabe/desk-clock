@@ -23,7 +23,7 @@
     --hand-hour: rgba(220, 220, 240, 0.95);
     --hand-minute: rgba(220, 220, 240, 0.95);
     --hand-second: rgba(180, 180, 205, 0.7);
-    --digital-shadow: rgba(100, 100, 160, 0.25);
+    --digital-halo: rgba(0, 0, 0, 0.92);
     --menu-bg: rgba(20, 20, 28, 0.96);
     --menu-text: #c0c0d8;
     --menu-hover: rgba(70, 70, 95, 0.4);
@@ -35,6 +35,7 @@
   }
 
   [data-theme="light"] {
+    color-scheme: light;
     --bg: rgba(215, 215, 222, 0.88);
     --face: rgba(235, 235, 240, 0.92);
     --face-border: rgba(30, 30, 50, 0.35);
@@ -43,7 +44,7 @@
     --hand-hour: rgba(30, 30, 50, 0.95);
     --hand-minute: rgba(30, 30, 50, 0.95);
     --hand-second: rgba(90, 70, 75, 0.65);
-    --digital-shadow: rgba(80, 80, 120, 0.15);
+    --digital-halo: rgba(255, 255, 255, 0.95);
     --menu-bg: rgba(235, 235, 240, 0.97);
     --menu-text: #303045;
     --menu-hover: rgba(110, 110, 140, 0.15);
@@ -63,7 +64,7 @@
     --hand-hour: rgba(140, 190, 245, 0.95);
     --hand-minute: rgba(140, 190, 245, 0.95);
     --hand-second: rgba(100, 150, 200, 0.7);
-    --digital-shadow: rgba(40, 100, 200, 0.25);
+    --digital-halo: rgba(2, 8, 20, 0.92);
     --menu-bg: rgba(10, 16, 36, 0.97);
     --menu-text: #85aed8;
     --menu-hover: rgba(40, 75, 135, 0.35);
@@ -102,18 +103,15 @@
     cursor: grabbing;
   }
 
-  #clock-container.click-through {
-    pointer-events: none !important;
-  }
-
   /* Toast Notification */
   #toast {
     position: fixed;
-    top: 16px;
+    /* 上中スナップの時計と重なるため下端に置く */
+    bottom: 16px;
     left: 50%;
     transform: translateX(-50%);
-    background: rgba(20, 20, 28, 0.95);
-    color: #e0e0f0;
+    background: var(--menu-bg);
+    color: var(--menu-text);
     padding: 8px 16px;
     border-radius: 8px;
     font-size: 12px;
@@ -153,7 +151,8 @@
     justify-content: center;
     background: transparent;
     border: none;
-    padding: 0;
+    /* 文字の外側にドラッグ用の余白を残す（PS1版の当たり判定と揃える） */
+    padding: 24px 32px;
     max-width: 98vw;
     max-height: 98vh;
   }
@@ -163,8 +162,10 @@
     /* 針は太さ4pxの実線なので、同じ色でも細いウェイトだと薄く見える。線量を合わせる */
     font-weight: 600;
     letter-spacing: 0.04em;
+    margin-right: -0.04em;   /* 末尾のアキを打ち消して光学的な中央を合わせる */
     color: var(--hand-hour);
-    text-shadow: 0 0 20px var(--digital-shadow);
+    /* 背景板を置かない代わりに輪郭を立てて壁紙・テーマによらず読ませる */
+    text-shadow: 0 0 2px var(--digital-halo), 0 0 5px var(--digital-halo), 0 0 14px var(--digital-halo);
     font-variant-numeric: tabular-nums;
     line-height: 1;
     white-space: nowrap;
@@ -174,10 +175,12 @@
     font-size: 18px;
     font-weight: 400;
     letter-spacing: 0.08em;
+    margin-right: -0.08em;
+    line-height: 1;
     color: var(--hand-hour);
     opacity: 0.7;
     margin-top: 8px;
-    text-shadow: 0 0 12px var(--digital-shadow);
+    text-shadow: 0 0 2px var(--digital-halo), 0 0 4px var(--digital-halo), 0 0 10px var(--digital-halo);
     white-space: nowrap;
     display: none;
   }
@@ -356,7 +359,7 @@
   <div class="menu-item" data-action="toggle-topmost">&#128204; 最前面に固定 (Ctrl+Shift+T)</div>
   <div class="menu-item" data-action="toggle-seconds">&#9202; 秒針を表示</div>
   <div class="menu-item" data-action="toggle-smart-opacity">&#128065; スマート透過 (マウス連動)</div>
-  <div class="menu-item" data-action="toggle-click-through">&#128070; クリックすり抜け (Ctrl+Shift+X)</div>
+  <div class="menu-item" data-action="toggle-click-through">&#128070; クリックすり抜け (PS1版のみ)</div>
   <div class="menu-item" data-action="toggle-date">&#128197; 日付・曜日を表示 (デジタル)</div>
   <div class="menu-separator"></div>
   <div class="menu-section-label">配置スナップ</div>
@@ -422,7 +425,7 @@
   <div class="menu-section-label">透明度</div>
   <div class="menu-slider-row">
     <label>透明度</label>
-    <input type="range" id="opacity-slider" min="15" max="100" value="85">
+    <input type="range" id="opacity-slider" min="15" max="90" value="85">
     <span class="slider-value" id="opacity-value">85%</span>
   </div>
   <div class="menu-separator"></div>
@@ -440,6 +443,10 @@
   var BASE_DIGITAL_SIZE = 64;
   var SCALE_MIN = 40;
   var SCALE_MAX = 360;
+  var OPACITY_MIN = 15;
+  var OPACITY_MAX = 90;
+  // 時針と分針は色も太さも同じなので、長さの差だけが両者を見分ける手がかりになる
+  var MIN_HAND_GAP = 10;
 
   var PROP_TYPES = {
     mode: 'string', theme: 'string',
@@ -554,6 +561,9 @@
       analogGroup.style.display = 'none';
       digitalGroup.style.display = 'block';
     }
+    // 秒針はアナログ専用。デジタルでは効かないため項目ごと隠す
+    var secItem = menu.querySelector('[data-action="toggle-seconds"]');
+    if (secItem) secItem.style.display = (state.mode === 'analog') ? 'flex' : 'none';
 
     // Update menu active states
     var items = menu.querySelectorAll('.menu-item');
@@ -573,21 +583,27 @@
   }
 
   // ===== 透明度・クリック透過 =====
+  var SMART_OPACITY_FACTOR = 0.45;
+  var SMART_OPACITY_MIN = 0.25;
+
   function applyOpacity() {
     if (state.smartOpacity) {
-      container.style.opacity = (state.opacity / 100) * 0.45;
+      // 減光しすぎると時計を見失い、復帰のためにホバーする場所が分からなくなる
+      container.style.opacity = Math.max(SMART_OPACITY_MIN, (state.opacity / 100) * SMART_OPACITY_FACTOR);
     } else {
       container.style.opacity = state.opacity / 100;
     }
   }
 
+  // ブラウザはページの外へクリックを通せないため、ここでは状態を保持して案内するだけ。
+  // pointer-events を切ると背後には通らないまま操作性だけを失うので触らない
+  function clickThroughMessage() {
+    if (!state.clickThrough) return 'クリックすり抜け: OFF';
+    return 'クリックすり抜け: ブラウザ版では背後に通せません（PS1版をご利用ください）';
+  }
+
   function applyClickThrough() {
-    if (state.clickThrough) {
-      container.classList.add('click-through');
-      showToast('クリックすり抜け有効 (解除: Ctrl+Shift+X)');
-    } else {
-      container.classList.remove('click-through');
-    }
+    if (state.clickThrough) showToast(clickThroughMessage());
   }
 
   var toastEl = document.getElementById('toast');
@@ -627,6 +643,9 @@
   // 表示倍率をモードによらず同じ操作で反映する
   function applyScale() {
     if (state.mode === 'analog') {
+      // アナログはウィンドウ内に収める必要があり 100% を超えても大きくならない。
+      // トーストと実際の描画が食い違わないよう値そのものを丸める
+      if (state.scale > 100) state.scale = 100;
       resizeCanvas();
     } else {
       updateDigitalSize();
@@ -639,6 +658,16 @@
     } else {
       digitalDate.style.display = 'none';
     }
+  }
+
+  // ウィンドウの外へ出ないよう位置を丸める（時計がウィンドウより大きい軸は中央寄せ）
+  function clampPosition() {
+    var margin = 16;
+    var maxX = Math.max(0, window.innerWidth / 2 - (container.offsetWidth || 0) / 2 - margin);
+    var maxY = Math.max(0, window.innerHeight / 2 - (container.offsetHeight || 0) / 2 - margin);
+    state.posX = Math.max(-maxX, Math.min(maxX, state.posX || 0));
+    state.posY = Math.max(-maxY, Math.min(maxY, state.posY || 0));
+    updatePosition();
   }
 
   // ===== スナップ配置 =====
@@ -682,17 +711,12 @@
         state.posY = 0;
         break;
     }
-    // 時計がウィンドウより大きい場合ははみ出さないよう中央寄せに丸める
-    var maxX = Math.max(0, halfW - halfCW - margin);
-    var maxY = Math.max(0, halfH - halfCH - margin);
-    state.posX = Math.max(-maxX, Math.min(maxX, state.posX));
-    state.posY = Math.max(-maxY, Math.min(maxY, state.posY));
-    updatePosition();
+    clampPosition();
     saveState();
   }
 
   function applyMode() {
-    // classList で安全にモードクラスを切り替え（click-through 等を保持）
+    // classList で安全にモードクラスを切り替える
     container.classList.remove('analog-mode', 'digital-mode');
     if (state.mode === 'analog') {
       container.classList.add('analog-mode');
@@ -790,7 +814,10 @@
     drawHand(cx, cy, hourAngle, hLen, state.hourWidth, cHandHour);
 
     // Minute hand
-    var minAngle = (minutes * 6 + seconds * 0.1 - 90) * Math.PI / 180;
+    // 秒針OFF時は更新が毎分1回。秒成分を混ぜるとリサイズ等の再描画時の秒が
+    // 焼き付き、分針が目盛りの中間で最大5.9°ずれたまま固定される
+    var secForMinute = state.showSeconds ? seconds : 0;
+    var minAngle = (minutes * 6 + secForMinute * 0.1 - 90) * Math.PI / 180;
     var mLen = r * (state.minuteLength / 100);
     drawHand(cx, cy, minAngle, mLen, state.minuteWidth, cHandMin);
 
@@ -852,14 +879,16 @@
     if (tickTimeoutId) clearTimeout(tickTimeoutId);
     tick();
 
-    // 秒針ONなら1秒間隔、秒針OFFなら次の分の00秒に同期（超省電力）
+    var now = new Date();
+    var delay;
     if (state.mode === 'analog' && state.showSeconds) {
-      tickTimeoutId = setTimeout(scheduleNextTick, 1000);
+      // 固定1000msだと遅延が累積して秒針が停滞・飛びするため、毎回秒境界へ同期し直す
+      delay = 1000 - now.getMilliseconds() + 20;
     } else {
-      var now = new Date();
-      var msToNextMinute = (60 - now.getSeconds()) * 1000 - now.getMilliseconds() + 50;
-      tickTimeoutId = setTimeout(scheduleNextTick, Math.max(1000, msToNextMinute));
+      // 秒針OFF時は次の00秒へ同期し、更新を毎分1回に抑える（超省電力）
+      delay = (60 - now.getSeconds()) * 1000 - now.getMilliseconds() + 20;
     }
+    tickTimeoutId = setTimeout(scheduleNextTick, Math.max(20, delay));
   }
 
   // ===== コンテキストメニュー =====
@@ -919,6 +948,7 @@
       state.clickThrough = !state.clickThrough;
       applyClickThrough();
       applyTheme();
+      if (!state.clickThrough) showToast(clickThroughMessage());
     } else if (action === 'toggle-topmost') {
       state.topmost = !state.topmost;
       applyTheme();
@@ -965,15 +995,16 @@
     e.preventDefault();
     if (e.ctrlKey) {
       // Ctrl + ホイール: 表示倍率をアナログ・デジタル共通で 5% 刻み調整
+      var upper = (state.mode === 'analog') ? 100 : SCALE_MAX;
       var newScale = (state.scale || 100) + (e.deltaY < 0 ? 5 : -5);
-      state.scale = Math.max(SCALE_MIN, Math.min(SCALE_MAX, newScale));
+      state.scale = Math.max(SCALE_MIN, Math.min(upper, newScale));
       applyScale();
       showToast('サイズ: ' + state.scale + '%');
     } else {
       // 通常ホイール: 透明度 5% 刻み
       var delta = e.deltaY < 0 ? 5 : -5;
       var newOp = state.opacity + delta;
-      state.opacity = Math.max(15, Math.min(100, newOp));
+      state.opacity = Math.max(OPACITY_MIN, Math.min(OPACITY_MAX, newOp));
       applyOpacity();
       opacitySlider.value = state.opacity;
       opacityValue.textContent = state.opacity + '%';
@@ -982,6 +1013,28 @@
     if (wheelSaveTimer) clearTimeout(wheelSaveTimer);
     wheelSaveTimer = setTimeout(saveState, 400);
   }, { passive: false });
+
+  // 時針が分針と同じか長いと時刻を反対に読んでしまう。
+  // どちらを動かしても 時針 + MIN_HAND_GAP <= 分針 を保つよう他方を押し出す
+  function enforceHandOrder(changed) {
+    if (state.hourLength + MIN_HAND_GAP > state.minuteLength) {
+      if (changed === 'hour') {
+        state.minuteLength = Math.min(parseInt(minLenSlider.max), state.hourLength + MIN_HAND_GAP);
+        if (state.hourLength + MIN_HAND_GAP > state.minuteLength) {
+          state.hourLength = state.minuteLength - MIN_HAND_GAP;
+        }
+      } else {
+        state.hourLength = Math.max(parseInt(hourLenSlider.min), state.minuteLength - MIN_HAND_GAP);
+        if (state.hourLength + MIN_HAND_GAP > state.minuteLength) {
+          state.minuteLength = state.hourLength + MIN_HAND_GAP;
+        }
+      }
+    }
+    hourLenSlider.value = state.hourLength;
+    hourLenVal.textContent = state.hourLength + '%';
+    minLenSlider.value = state.minuteLength;
+    minLenVal.textContent = state.minuteLength + '%';
+  }
 
   // ===== スライダー =====
   function bindSlider(slider, valEl, unit, stateKey, onChange) {
@@ -1005,6 +1058,7 @@
   });
 
   bindSlider(hourLenSlider, hourLenVal, '%', 'hourLength', function() {
+    enforceHandOrder('hour');
     if (state.mode === 'analog') drawAnalog();
   });
 
@@ -1013,6 +1067,7 @@
   });
 
   bindSlider(minLenSlider, minLenVal, '%', 'minuteLength', function() {
+    enforceHandOrder('minute');
     if (state.mode === 'analog') drawAnalog();
   });
 
@@ -1055,6 +1110,7 @@
   document.addEventListener('mouseup', function() {
     if (isDragging) {
       isDragging = false;
+      clampPosition();   // 画面外へ出したまま保存させない
       saveState();
     }
   });
@@ -1066,7 +1122,14 @@
     } else {
       updateDigitalSize();
     }
+    clampPosition();
   });
+
+  // タイマーはタブ非表示中に抑制される。復帰時は即座に描き直して同期し直す
+  document.addEventListener('visibilitychange', function() {
+    if (!document.hidden) scheduleNextTick();
+  });
+  window.addEventListener('pageshow', function() { scheduleNextTick(); });
 
   // ===== スマート透過（マウスホバー連動） =====
   container.addEventListener('mouseenter', function() {
@@ -1085,13 +1148,19 @@
   window.addEventListener('keydown', function(e) {
     // Ctrl + Shift + X: クリックすり抜けトグル
     if (e.ctrlKey && e.shiftKey && (e.key === 'X' || e.key === 'x')) {
+      e.preventDefault();
+      e.stopPropagation();
       state.clickThrough = !state.clickThrough;
       applyClickThrough();
       applyTheme();
+      if (!state.clickThrough) showToast(clickThroughMessage());
       saveState();
     }
     // Ctrl + Shift + T: 最前面固定トグル
     if (e.ctrlKey && e.shiftKey && (e.key === 'T' || e.key === 't')) {
+      // Ctrl+Shift+T はブラウザの「閉じたタブを開く」と衝突するため既定動作を止める
+      e.preventDefault();
+      e.stopPropagation();
       state.topmost = !state.topmost;
       applyTheme();
       showToast(topmostMessage());
@@ -1102,12 +1171,15 @@
   // ===== 初期化 =====
   document.title = '\u200E';
   var restored = loadState();
+  state.opacity = Math.max(OPACITY_MIN, Math.min(OPACITY_MAX, state.opacity));
+  enforceHandOrder('minute');   // 保存値が逆転していても正す
   applyMode();
   applyOpacity();
   applyClickThrough();
   updateDigitalDateVisibility();
   if (restored) {
-    updatePosition();
+    // 前回よりウィンドウが小さくなっていても画面外に取り残されないようにする
+    clampPosition();
   } else {
     // 初回起動は既定でアナログ時計を画面右上に置く
     snapToPosition('top-right');

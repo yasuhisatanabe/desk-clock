@@ -22,6 +22,40 @@ public class Win32 {
     [DllImport("user32.dll", SetLastError = true)]
     public static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RECT { public int Left, Top, Right, Bottom; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct POINT { public int X, Y; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MONITORINFO {
+        public int cbSize;
+        public RECT rcMonitor;
+        public RECT rcWork;
+        public uint dwFlags;
+    }
+
+    public const uint MONITOR_DEFAULTTONEAREST = 2;
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr MonitorFromPoint(POINT pt, uint dwFlags);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    public static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFO lpmi);
+
+    // 指定した点が乗っているモニタの作業領域（タスクバーを除く）をピクセルで返す。
+    // どのモニタにも乗っていない場合は最も近いモニタを返す
+    public static RECT GetWorkAreaFromPoint(int x, int y) {
+        POINT p; p.X = x; p.Y = y;
+        IntPtr h = MonitorFromPoint(p, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO mi = new MONITORINFO();
+        mi.cbSize = Marshal.SizeOf(typeof(MONITORINFO));
+        if (GetMonitorInfo(h, ref mi)) { return mi.rcWork; }
+        RECT r; r.Left = 0; r.Top = 0; r.Right = 0; r.Bottom = 0;
+        return r;
+    }
+
     public static void SetClickThrough(IntPtr hWnd, bool enable) {
         int style = GetWindowLong(hWnd, GWL_EXSTYLE);
         if (enable) {
@@ -43,7 +77,7 @@ $startupLnk = Join-Path ([Environment]::GetFolderPath("Startup")) "DeskClock.lnk
 $script:Settings = @{
     Mode            = "analog"      # "analog" or "digital"
     Theme           = "dark"        # "dark", "light", "blue"
-    Opacity         = 0.85          # 0.30 - 1.00
+    Opacity         = 0.85          # 0.15 - 0.90
     ShowSeconds     = $false        # $true / $false (秒針表示)
     SmartOpacity    = $false        # $true / $false (スマート透過: 平常時半透明、ホバー時100%)
     ClickThrough    = $false        # $true / $false (クリックすり抜け)
@@ -53,18 +87,38 @@ $script:Settings = @{
     HourWidth       = 4.0           # 1.5 - 6.0
     HourLength      = 45            # 35 - 55 (%)
     MinuteWidth     = 4.0           # 1.5 - 6.0
-    MinuteLength    = 82            # 55 - 80 (%)
+    MinuteLength    = 82            # 30 - 90 (%)
     SecondWidth     = 1.5           # 1.0 - 4.0
     SecondLength    = 72            # 60 - 85 (%)
     DigitalSize     = 64.0          # 36 - 128 (px)
     Width           = 220
     Height          = 220
-    Left            = -1            # -1 = CenterScreen
-    Top             = -1
+    Left            = $null         # $null = 未設定（初回は画面右上）。負の値も正当な座標
+    Top             = $null
 }
 
 # 表示倍率 100% のときのアナログ時計ウィンドウの一辺 (px)
 $script:BaseAnalogSize = 220.0
+
+# デジタル表示で文字の外側に確保する操作用の余白と、ウィンドウの最小サイズ (px)
+$script:MinWindowSide = 120
+# アナログはウィンドウ下限 (MinWindowSide) より小さくできないため、
+# 実際に効かない倍率をレンジから外して「回しても変わらない」帯をなくす
+$script:MinAnalogScale = [int][Math]::Ceiling($script:MinWindowSide / $script:BaseAnalogSize * 100)
+
+# スマート透過の減光率と、すり抜け中に守る不透明度の下限
+# 透明度の範囲と、時針・分針を見分けるための最小の長さ差 (%)
+$script:OpacityMin = 0.15
+$script:OpacityMax = 0.90
+$script:MinHandGap = 10
+
+$script:SmartOpacityFactor = 0.45
+$script:SmartOpacityMin = 0.25
+$script:ClickThroughMinOpacity = 0.35
+$script:HitPadX = 48
+$script:HitPadY = 40
+$script:MinDigitalW = 220
+$script:MinDigitalH = 150
 
 # ===== テーマ定義 =====
 $script:Themes = @{
@@ -75,6 +129,7 @@ $script:Themes = @{
         HandHour        = "#F2DCDCF0"
         HandMinute      = "#F2DCDCF0"
         HandSecond      = "#B3B4B4CF"
+        DigitalHalo     = "#000000"     # デジタル文字の縁取り。文字と逆の明度にする
     }
     light = @{
         Face            = "#EBEBEBF0"
@@ -83,6 +138,7 @@ $script:Themes = @{
         HandHour        = "#F21E1E32"
         HandMinute      = "#F21E1E32"
         HandSecond      = "#A65A464B"
+        DigitalHalo     = "#FFFFFF"
     }
     blue = @{
         Face            = "#EB0E1428"
@@ -91,6 +147,7 @@ $script:Themes = @{
         HandHour        = "#F28CBEF5"
         HandMinute      = "#F28CBEF5"
         HandSecond      = "#B36496C8"
+        DigitalHalo     = "#020814"
     }
 }
 
@@ -119,6 +176,19 @@ function Load-Settings {
             if ($null -ne $json.Height) { $script:Settings.Height = [int]$json.Height }
             if ($null -ne $json.Left) { $script:Settings.Left = [double]$json.Left }
             if ($null -ne $json.Top) { $script:Settings.Top = [double]$json.Top }
+
+            # 範囲外の値を持ち込ませない（手編集・旧バージョンからの移行対策）
+            $script:Settings.Opacity = [Math]::Max($script:OpacityMin, [Math]::Min($script:OpacityMax, $script:Settings.Opacity))
+            $script:Settings.Scale   = [Math]::Max(40, [Math]::Min(360, $script:Settings.Scale))
+            # 時針が分針と同じか長いと時刻を反対に読んでしまうため、時針を縮めて必ず差を確保する
+            if ($script:Settings.HourLength + $script:MinHandGap -gt $script:Settings.MinuteLength) {
+                $script:Settings.HourLength = $script:Settings.MinuteLength - $script:MinHandGap
+            }
+            # 旧形式の -1 センチネルを未設定へ移行する
+            if ($script:Settings.Left -eq -1 -and $script:Settings.Top -eq -1) {
+                $script:Settings.Left = $null
+                $script:Settings.Top = $null
+            }
             if ($null -eq $json.Scale -and $null -ne $json.Width) {
                 # Scale 導入前の設定ファイルからの移行
                 $script:Settings.Scale = [Math]::Max(40, [Math]::Min(360, [int][Math]::Round([int]$json.Width / $script:BaseAnalogSize * 100)))
@@ -160,20 +230,21 @@ $xaml = @"
     Background="Transparent"
     Topmost="True"
     ShowInTaskbar="True"
-    ResizeMode="CanResize"
-    MinWidth="100" MinHeight="100"
+    ResizeMode="NoResize"
+    MinWidth="120" MinHeight="120"
     Width="220" Height="220">
 
     <Grid x:Name="MainGrid" Background="#01000000">
         <!-- Analog Clock Canvas -->
         <Canvas x:Name="AnalogCanvas" 
                 HorizontalAlignment="Stretch" 
-                VerticalAlignment="Stretch"/>
+                VerticalAlignment="Stretch"
+                Visibility="Collapsed"/>
         
         <!-- Digital Clock -->
         <Border x:Name="DigitalBorder" 
                 CornerRadius="16" 
-                Padding="24,16"
+                Padding="32,24"
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center"
                 Visibility="Collapsed">
@@ -183,12 +254,13 @@ $xaml = @"
                            FontSize="64"
                            FontWeight="SemiBold"
                            FontFamily="Segoe UI, Consolas"
+                           Typography.NumeralAlignment="Tabular"
                            HorizontalAlignment="Center"/>
                 <TextBlock x:Name="DigitalDate" 
                            Text="1月1日 (日)"
                            FontSize="18"
                            FontWeight="Normal"
-                           FontFamily="Segoe UI, Meiryo"
+                           FontFamily="Segoe UI, Yu Gothic UI, Meiryo, MS Gothic"
                            Opacity="0.7"
                            HorizontalAlignment="Center"
                            Margin="0,4,0,0"
@@ -216,6 +288,14 @@ function Get-BrushFromHex([string]$hex) {
         return New-Object System.Windows.Media.SolidColorBrush($color)
     } catch {
         return [System.Windows.Media.Brushes]::Transparent
+    }
+}
+
+function Get-ColorFromHex([string]$hex) {
+    try {
+        return [System.Windows.Media.ColorConverter]::ConvertFromString($hex)
+    } catch {
+        return [System.Windows.Media.Colors]::Black
     }
 }
 
@@ -288,7 +368,10 @@ function Draw-AnalogClock {
     $analogCanvas.Children.Add($hLine) | Out-Null
 
     # Minute hand
-    $minAngle = ($minutes * 6 + $seconds * 0.1 - 90) * [Math]::PI / 180.0
+    # 秒針OFF時は更新が毎分1回。秒成分を混ぜるとリサイズ等の再描画時の秒が
+    # 焼き付き、分針が目盛りの中間で最大5.9°ずれたまま固定される
+    $secForMinute = if ($script:Settings.ShowSeconds) { $seconds } else { 0 }
+    $minAngle = ($minutes * 6 + $secForMinute * 0.1 - 90) * [Math]::PI / 180.0
     $mLen = $r * ($script:Settings.MinuteLength / 100.0)
     $mLine = New-Object System.Windows.Shapes.Line
     $mLine.X1 = $cx; $mLine.Y1 = $cy
@@ -343,8 +426,13 @@ function Update-DigitalClock {
 
 # ===== ウィンドウ透明度・クリック透過 =====
 function Apply-WindowOpacity {
-    if ($script:Settings.SmartOpacity) {
-        $window.Opacity = $script:Settings.Opacity * 0.45
+    if ($script:Settings.ClickThrough) {
+        # すり抜け中はマウスイベントが届かず MouseEnter による復帰ができない。
+        # ここで減光すると「見えない上に反応しない」状態になるため下限を強制する
+        $window.Opacity = [Math]::Max($script:ClickThroughMinOpacity, $script:Settings.Opacity)
+    } elseif ($script:Settings.SmartOpacity) {
+        # 減光しすぎると時計を見失い、復帰のためにホバーする場所が分からなくなる
+        $window.Opacity = [Math]::Max($script:SmartOpacityMin, $script:Settings.Opacity * $script:SmartOpacityFactor)
     } else {
         $window.Opacity = $script:Settings.Opacity
     }
@@ -360,13 +448,58 @@ function Apply-ClickThrough {
     } catch {}
 }
 
+# ===== モニタ単位の作業領域 =====
+# WPF は DIP、Win32 はピクセルで扱うため相互変換する。
+# 注: 混在 DPI 環境ではウィンドウ側の倍率を使うため誤差が出る（Per-Monitor DPI V2 未対応）
+function Get-DipScale {
+    try {
+        $src = [System.Windows.PresentationSource]::FromVisual($window)
+        if ($src -and $src.CompositionTarget) {
+            $m = $src.CompositionTarget.TransformToDevice
+            if ($m.M11 -gt 0 -and $m.M22 -gt 0) {
+                return @{ X = $m.M11; Y = $m.M22 }
+            }
+        }
+    } catch {}
+    return @{ X = 1.0; Y = 1.0 }
+}
+
+# 時計の中心が乗っているモニタの作業領域を DIP で返す。
+# SystemParameters::WorkArea はプライマリモニタしか返さないため使わない
+function Get-WorkArea {
+    $s = Get-DipScale
+    $w = if ([double]::IsNaN($window.Width))  { $script:Settings.Width }  else { $window.Width }
+    $h = if ([double]::IsNaN($window.Height)) { $script:Settings.Height } else { $window.Height }
+    $cx = if ($null -ne $script:Settings.Left) { $script:Settings.Left + $w / 2.0 } else { 0.0 }
+    $cy = if ($null -ne $script:Settings.Top)  { $script:Settings.Top  + $h / 2.0 } else { 0.0 }
+    try {
+        $r = [Win32]::GetWorkAreaFromPoint([int]($cx * $s.X), [int]($cy * $s.Y))
+        if ($r.Right -gt $r.Left -and $r.Bottom -gt $r.Top) {
+            return [PSCustomObject]@{
+                Left   = $r.Left   / $s.X
+                Top    = $r.Top    / $s.Y
+                Right  = $r.Right  / $s.X
+                Bottom = $r.Bottom / $s.Y
+                Width  = ($r.Right - $r.Left) / $s.X
+                Height = ($r.Bottom - $r.Top) / $s.Y
+            }
+        }
+    } catch {}
+    # 取得できない場合のみプライマリへフォールバック
+    $wa = [System.Windows.SystemParameters]::WorkArea
+    return [PSCustomObject]@{
+        Left = $wa.Left; Top = $wa.Top; Right = $wa.Right; Bottom = $wa.Bottom
+        Width = $wa.Width; Height = $wa.Height
+    }
+}
+
 # ===== スナップ配置 =====
 function Snap-Window([string]$pos) {
-    $workArea = [System.Windows.SystemParameters]::WorkArea
+    $workArea = Get-WorkArea
     $margin = 16.0
-    # レイアウト前は ActualWidth が 0 のため、指定済みの Width を優先する
-    $w = if ([double]::IsNaN($window.Width) -or $window.Width -le 0) { $window.ActualWidth } else { $window.Width }
-    $h = if ([double]::IsNaN($window.Height) -or $window.Height -le 0) { $window.ActualHeight } else { $window.Height }
+    # レイアウト前は ActualWidth が 0 になるため、確定済みの Settings を最終的な拠り所にする
+    $w = if ([double]::IsNaN($window.Width)  -or $window.Width  -le 0) { [double]$script:Settings.Width }  else { $window.Width }
+    $h = if ([double]::IsNaN($window.Height) -or $window.Height -le 0) { [double]$script:Settings.Height } else { $window.Height }
     
     switch ($pos) {
         "top-left" {
@@ -399,6 +532,26 @@ function Snap-Window([string]$pos) {
     Save-Settings
 }
 
+# ===== デジタル文字の縁取り =====
+# 背景板を置かない設計のため、壁紙やテーマに関わらず読めるよう
+# 文字と逆の明度のハローを回して輪郭を立てる
+function Apply-DigitalHalo {
+    $theme = Get-CurrentTheme
+    $color = Get-ColorFromHex $theme.DigitalHalo
+    foreach ($tb in @($digitalTime, $digitalDate)) {
+        # 倍率変更のたびに生成し直さず、既存の Effect を更新する
+        $eff = $tb.Effect
+        if (-not ($eff -is [System.Windows.Media.Effects.DropShadowEffect])) {
+            $eff = New-Object System.Windows.Media.Effects.DropShadowEffect
+            $eff.ShadowDepth = 0
+            $eff.Opacity = 1.0
+            $tb.Effect = $eff
+        }
+        $eff.Color = $color
+        $eff.BlurRadius = [Math]::Max(4.0, $tb.FontSize * 0.16)
+    }
+}
+
 # ===== デジタル表示のサイズ合わせ =====
 # $exact = $false のときは「はみ出す場合のみ広げる」（ユーザーが決めたサイズを尊重）
 function Fit-DigitalWindow([bool]$exact = $false) {
@@ -406,28 +559,36 @@ function Fit-DigitalWindow([bool]$exact = $false) {
     try {
         $inf = New-Object System.Windows.Size -ArgumentList ([double]::PositiveInfinity), ([double]::PositiveInfinity)
         $digitalBorder.Measure($inf)
-        $needW = [Math]::Ceiling($digitalBorder.DesiredSize.Width) + 4
-        $needH = [Math]::Ceiling($digitalBorder.DesiredSize.Height) + 4
+        $rawW = $digitalBorder.DesiredSize.Width
+        $rawH = $digitalBorder.DesiredSize.Height
         $digitalBorder.InvalidateMeasure()
     } catch { return }
-    if ($needW -le 0 -or $needH -le 0) { return }
+    # 計測できていない (レイアウト未実行など) ときに極小ウィンドウへ潰さない
+    if ($rawW -le 1 -or $rawH -le 1) { return }
+
+    # 文字の外側にドラッグ・右クリック・ホイール用の余白を必ず残す
+    $needW = [Math]::Ceiling($rawW) + $script:HitPadX
+    $needH = [Math]::Ceiling($rawH) + $script:HitPadY
 
     $curW = if ([double]::IsNaN($window.Width)) { $window.ActualWidth } else { $window.Width }
     $curH = if ([double]::IsNaN($window.Height)) { $window.ActualHeight } else { $window.Height }
     $newW = if ($exact) { $needW } else { [Math]::Max($curW, $needW) }
     $newH = if ($exact) { $needH } else { [Math]::Max($curH, $needH) }
 
-    $window.Width  = [Math]::Max(100, [Math]::Min(800, $newW))
-    $window.Height = [Math]::Max(100, [Math]::Min(800, $newH))
+    $window.Width  = [Math]::Max($script:MinDigitalW, [Math]::Min(800, $newW))
+    $window.Height = [Math]::Max($script:MinDigitalH, [Math]::Min(800, $newH))
     $script:Settings.Width  = [int]$window.Width
     $script:Settings.Height = [int]$window.Height
 }
 
 # ===== 表示倍率 =====
 function Apply-Scale {
+    if ($script:Settings.Mode -eq "analog" -and $script:Settings.Scale -lt $script:MinAnalogScale) {
+        $script:Settings.Scale = $script:MinAnalogScale
+    }
     $ratio = [Math]::Max(40, [Math]::Min(360, [int]$script:Settings.Scale)) / 100.0
     if ($script:Settings.Mode -eq "analog") {
-        $size = [Math]::Max(100, [Math]::Min(800, $script:BaseAnalogSize * $ratio))
+        $size = [Math]::Max($script:MinWindowSide, [Math]::Min(800, $script:BaseAnalogSize * $ratio))
         $window.Width  = $size
         $window.Height = $size
         $script:Settings.Width  = [int]$size
@@ -435,8 +596,27 @@ function Apply-Scale {
     } else {
         $digitalTime.FontSize = [Math]::Max(16, [Math]::Round($script:Settings.DigitalSize * $ratio))
         $digitalDate.FontSize = [Math]::Max(11, [Math]::Round($digitalTime.FontSize * 0.28))
+        Apply-DigitalHalo
         Fit-DigitalWindow $true
     }
+}
+
+# ===== 位置の復元 =====
+function Restore-WindowPosition {
+    if ($null -eq $script:Settings.Left -or $null -eq $script:Settings.Top) {
+        # 初回起動は画面右上
+        Snap-Window "top-right"
+        return
+    }
+    # 時計が乗っているモニタの作業領域内へ収める。
+    # 別モニタに置いてあるものをプライマリへ引き戻さないこと
+    $wa = Get-WorkArea
+    $w = if ([double]::IsNaN($window.Width))  { [double]$script:Settings.Width }  else { $window.Width }
+    $h = if ([double]::IsNaN($window.Height)) { [double]$script:Settings.Height } else { $window.Height }
+    $window.Left = [Math]::Min([Math]::Max($script:Settings.Left, $wa.Left), [Math]::Max($wa.Left, $wa.Right - $w))
+    $window.Top  = [Math]::Min([Math]::Max($script:Settings.Top,  $wa.Top),  [Math]::Max($wa.Top,  $wa.Bottom - $h))
+    $script:Settings.Left = $window.Left
+    $script:Settings.Top  = $window.Top
 }
 
 # ===== 表示モード切替 =====
@@ -457,6 +637,10 @@ function Apply-Mode {
         $digitalDate.Visibility = if ($script:Settings.ShowDate) { "Visible" } else { "Collapsed" }
     }
     Apply-Scale
+    if ($script:Settings.Mode -eq "digital") { Apply-DigitalHalo }
+
+    # 秒針はアナログ専用。デジタルでは押しても効かないため無効化する
+    if ($script:menuSeconds) { $script:menuSeconds.IsEnabled = ($script:Settings.Mode -eq "analog") }
 
     $window.Topmost = $script:Settings.Topmost
     Apply-WindowOpacity
@@ -466,18 +650,17 @@ function Apply-Mode {
 # ===== タイマー & 省電力制御 =====
 function Adjust-TimerInterval {
     if (-not $script:timer) { return }
+    $now = Get-Date
     if ($script:Settings.Mode -eq "analog" -and $script:Settings.ShowSeconds) {
-        # Interval への代入は稼働中タイマーを再スタートさせるため、変化時のみ書き込む
-        $oneSec = [TimeSpan]::FromSeconds(1)
-        if ($script:timer.Interval -ne $oneSec) { $script:timer.Interval = $oneSec }
+        # 固定1000msだと tick の遅延が累積して秒針が停滞・飛びするため、
+        # 毎回「次の秒境界までの残り」を計算し直して壁時計に追従させる
+        $ms = 1000 - $now.Millisecond + 20
     } else {
-        # 秒針OFF時は次の 00 秒までミリ秒単位で同期し、更新を毎分1回に抑える
-        $now = Get-Date
-        $msToNextMin = (60 - $now.Second) * 1000 - $now.Millisecond + 50
-        # 直近の 00 秒を跨いでしまわないよう、下限は 1 秒に丸めるだけに留める
-        if ($msToNextMin -lt 1000) { $msToNextMin = 1000 }
-        $script:timer.Interval = [TimeSpan]::FromMilliseconds($msToNextMin)
+        # 秒針OFF時は次の 00 秒へ同期し、更新を毎分1回に抑える
+        $ms = (60 - $now.Second) * 1000 - $now.Millisecond + 20
     }
+    if ($ms -lt 20) { $ms = 20 }
+    $script:timer.Interval = [TimeSpan]::FromMilliseconds($ms)
 }
 
 function Tick-Handler {
@@ -559,6 +742,7 @@ $script:menuClickThrough.IsChecked = $false
 $script:menuClickThrough.Add_Click({
     $script:Settings.ClickThrough = $script:menuClickThrough.IsChecked
     Apply-ClickThrough
+    Apply-WindowOpacity
     Save-Settings
 })
 $contextMenu.Items.Add($script:menuClickThrough) | Out-Null
@@ -676,7 +860,7 @@ $menuHands.Items.Add((New-OptionSubMenu -Header "分針 太さ" -Options @(
 ) -SettingsKey "MinuteWidth" -ValueType "double" -OnChange $tickOnChange)) | Out-Null
 
 $menuHands.Items.Add((New-OptionSubMenu -Header "分針 長さ" -Options @(
-    @{L="短め (55%)";V=55}, @{L="標準 (65%)";V=65}, @{L="長め (80%)";V=80}
+    @{L="短め (65%)";V=65}, @{L="標準 (82%)";V=82}, @{L="長め (90%)";V=90}
 ) -SettingsKey "MinuteLength" -ValueType "int" -OnChange $tickOnChange)) | Out-Null
 
 $menuHands.Items.Add((New-OptionSubMenu -Header "秒針 太さ" -Options @(
@@ -729,7 +913,7 @@ $contextMenu.Items.Add((New-Object System.Windows.Controls.Separator)) | Out-Nul
 $menuOpacity = New-Object System.Windows.Controls.MenuItem
 $menuOpacity.Header = "透明度"
 $opacityValues = @(
-    @{ Label = "100%"; Value = 1.0 },
+    @{ Label = "90%"; Value = 0.90 },
     @{ Label = "85%"; Value = 0.85 },
     @{ Label = "70%"; Value = 0.70 },
     @{ Label = "50%"; Value = 0.50 },
@@ -812,6 +996,10 @@ $window.Add_MouseLeftButtonDown({
         Save-Settings
     } else {
         try { $window.DragMove() } catch {}
+        # 終了時だけの保存だと強制終了で位置が失われるため、都度（デバウンスして）保存する
+        $script:Settings.Left = $window.Left
+        $script:Settings.Top  = $window.Top
+        Request-Save
     }
 })
 
@@ -824,12 +1012,14 @@ $window.Add_PreviewMouseWheel({
     if ($ctrlDown) {
         # Ctrl + ホイール: 表示倍率をアナログ・デジタル共通で 5% 刻み調整
         $step = if ($e.Delta -gt 0) { 5 } else { -5 }
-        $script:Settings.Scale = [Math]::Max(40, [Math]::Min(360, [int]$script:Settings.Scale + $step))
+        $lower = if ($script:Settings.Mode -eq "analog") { $script:MinAnalogScale } else { 40 }
+        $script:Settings.Scale = [Math]::Max($lower, [Math]::Min(360, [int]$script:Settings.Scale + $step))
         Apply-Scale
+        Restore-WindowPosition   # 拡大でモニタからはみ出さないようにする
     } else {
         # 通常ホイール: 透明度 5% 刻み
         $step = if ($e.Delta -gt 0) { 0.05 } else { -0.05 }
-        $newOp = [Math]::Max(0.15, [Math]::Min(1.0, $script:Settings.Opacity + $step))
+        $newOp = [Math]::Max($script:OpacityMin, [Math]::Min($script:OpacityMax, $script:Settings.Opacity + $step))
         $script:Settings.Opacity = [Math]::Round($newOp, 2)
         # スマート透過ON時もホバー中は 1.0 に固定されるため、調整値を直接反映して手応えを出す
         $window.Opacity = $script:Settings.Opacity
@@ -859,6 +1049,7 @@ $window.Add_KeyDown({
         $script:Settings.ClickThrough = -not $script:Settings.ClickThrough
         if ($script:menuClickThrough) { $script:menuClickThrough.IsChecked = $script:Settings.ClickThrough }
         Apply-ClickThrough
+        Apply-WindowOpacity
         Save-Settings
     }
     # Ctrl + Shift + T: 最前面固定トグル
@@ -872,33 +1063,55 @@ $window.Add_KeyDown({
     }
 })
 
-# ===== ウィンドウイベント =====
-$window.Add_Loaded({
-    Load-Settings
-    
-    $window.Width = $script:Settings.Width
-    $window.Height = $script:Settings.Height
-    
-    # Apply-Mode (内部で Apply-Scale) がサイズを確定させてから位置を決める
-    Apply-Mode
-    
-    if ($script:Settings.Left -ge 0 -and $script:Settings.Top -ge 0) {
-        $window.Left = $script:Settings.Left
-        $window.Top = $script:Settings.Top
-    } else {
-        # 初回起動は既定でアナログ時計を画面右上に置く
-        Snap-Window "top-right"
-    }
+# ===== 起動前の初期化 =====
+# ShowDialog より前に確定させることで、別モードが一瞬見えたり
+# 既定位置に出てから移動したりするちらつきを防ぐ
+Load-Settings
 
-    if ($script:menuTopmost) { $script:menuTopmost.IsChecked = $script:Settings.Topmost }
-    if ($script:menuSeconds) { $script:menuSeconds.IsChecked = $script:Settings.ShowSeconds }
-    if ($script:menuSmartOp) { $script:menuSmartOp.IsChecked = $script:Settings.SmartOpacity }
-    if ($script:menuClickThrough) { $script:menuClickThrough.IsChecked = $script:Settings.ClickThrough }
-    if ($script:menuDate) { $script:menuDate.IsChecked = $script:Settings.ShowDate }
-    if ($script:menuStartup) { $script:menuStartup.IsChecked = (Test-Path $startupLnk) }
-    
-    Tick-Handler
-    
+$window.Width  = $script:Settings.Width
+$window.Height = $script:Settings.Height
+
+# Apply-Mode (内部で Apply-Scale) でサイズを確定させる。
+# 位置は DPI が判る SourceInitialized まで待つ（初回描画より前なのでちらつかない）
+Apply-Mode
+
+if ($script:menuTopmost) { $script:menuTopmost.IsChecked = $script:Settings.Topmost }
+if ($script:menuSeconds) { $script:menuSeconds.IsChecked = $script:Settings.ShowSeconds }
+if ($script:menuSmartOp) { $script:menuSmartOp.IsChecked = $script:Settings.SmartOpacity }
+if ($script:menuClickThrough) { $script:menuClickThrough.IsChecked = $script:Settings.ClickThrough }
+if ($script:menuDate) { $script:menuDate.IsChecked = $script:Settings.ShowDate }
+if ($script:menuStartup) { $script:menuStartup.IsChecked = (Test-Path $startupLnk) }
+
+Tick-Handler
+
+# HWND 生成直後・初回描画前。ここで初めてモニタと DPI が判る
+$window.Add_SourceInitialized({
+    Restore-WindowPosition
+
+    # 解像度変更・モニタ着脱に追従する (WM_DISPLAYCHANGE)
+    try {
+        $hwnd = (New-Object System.Windows.Interop.WindowInteropHelper($window)).Handle
+        $src = [System.Windows.Interop.HwndSource]::FromHwnd($hwnd)
+        if ($src) {
+            $script:wndHook = [System.Windows.Interop.HwndSourceHook]{
+                param($h, $msg, $wp, $lp, $handled)
+                if ($msg -eq 0x007E) { Restore-WindowPosition }   # WM_DISPLAYCHANGE
+                # スリープ復帰・時刻変更の直後は表示が古いままなので即座に描き直す
+                if ($msg -eq 0x0218 -or $msg -eq 0x001E) { Tick-Handler }  # WM_POWERBROADCAST / WM_TIMECHANGE
+                return [IntPtr]::Zero
+            }
+            $src.AddHook($script:wndHook)
+        }
+    } catch {}
+})
+
+$window.Add_Loaded({
+    # レイアウト確定後にサイズを取り直し、位置と当たり判定を最終化する
+    Apply-Scale
+    Restore-WindowPosition
+    Apply-ClickThrough   # HWND が必要なためここで実行
+    Apply-WindowOpacity
+
     $script:timer = New-Object System.Windows.Threading.DispatcherTimer
     $script:timer.Interval = [TimeSpan]::FromSeconds(1)
     $script:timer.Add_Tick({ Tick-Handler })
@@ -908,11 +1121,6 @@ $window.Add_Loaded({
 
 $window.Add_SizeChanged({
     if ($script:Settings.Mode -eq "analog") {
-        # ドラッグでのリサイズと Ctrl+ホイールの倍率がずれないよう同期する
-        $side = [Math]::Min($window.ActualWidth, $window.ActualHeight)
-        if ($side -gt 0) {
-            $script:Settings.Scale = [Math]::Max(40, [Math]::Min(360, [int][Math]::Round($side / $script:BaseAnalogSize * 100)))
-        }
         Draw-AnalogClock
     }
 })
