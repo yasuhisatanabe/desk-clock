@@ -7,21 +7,11 @@ Add-Type -AssemblyName PresentationFramework
 Add-Type -AssemblyName PresentationCore
 Add-Type -AssemblyName WindowsBase
 
-# ===== Win32 API (Click-Through) =====
+# ===== Win32 API (モニタ情報の取得) =====
 $win32Code = @"
 using System;
 using System.Runtime.InteropServices;
 public class Win32 {
-    public const int GWL_EXSTYLE = -20;
-    public const int WS_EX_TRANSPARENT = 0x00000020;
-    public const int WS_EX_LAYERED = 0x00080000;
-
-    [DllImport("user32.dll", SetLastError = true)]
-    public static extern int GetWindowLong(IntPtr hWnd, int nIndex);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    public static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
-
     [StructLayout(LayoutKind.Sequential)]
     public struct RECT { public int Left, Top, Right, Bottom; }
 
@@ -55,15 +45,6 @@ public class Win32 {
         RECT r; r.Left = 0; r.Top = 0; r.Right = 0; r.Bottom = 0;
         return r;
     }
-
-    public static void SetClickThrough(IntPtr hWnd, bool enable) {
-        int style = GetWindowLong(hWnd, GWL_EXSTYLE);
-        if (enable) {
-            SetWindowLong(hWnd, GWL_EXSTYLE, style | WS_EX_TRANSPARENT | WS_EX_LAYERED);
-        } else {
-            SetWindowLong(hWnd, GWL_EXSTYLE, style & ~WS_EX_TRANSPARENT);
-        }
-    }
 }
 "@
 try { Add-Type -TypeDefinition $win32Code -Language CSharp } catch {}
@@ -80,19 +61,17 @@ $script:Settings = @{
     Opacity         = 0.85          # 0.15 - 0.90
     ShowSeconds     = $false        # $true / $false (秒針表示)
     SmartOpacity    = $false        # $true / $false (スマート透過: 平常時半透明、ホバー時100%)
-    ClickThrough    = $false        # $true / $false (クリックすり抜け)
-    Topmost         = $true         # $true / $false (最前面固定)
     ShowDate        = $false        # $true / $false (デジタル時日付・曜日表示)
     ShowPlate       = $false        # $true / $false (デジタル時の背景板)
     Scale           = 100           # 40 - 360 (%) 表示倍率。アナログ・デジタル共通
     HourWidth       = 4.0           # 1.5 - 6.0
-    HourLength      = 45            # 35 - 55 (%)
+    HourLength      = 45            # 20 - 70 (%) 分針より必ず短く保たれる
     MinuteWidth     = 4.0           # 1.5 - 6.0
     MinuteLength    = 82            # 30 - 90 (%)
     SecondWidth     = 1.5           # 1.0 - 4.0
-    SecondLength    = 72            # 60 - 85 (%)
-    DigitalSize     = 64.0          # 36 - 128 (px)
-    Width           = 220
+    SecondLength    = 72            # 60 - 90 (%)
+    DigitalSize     = 64.0          # 36 - 128 (px) 実効サイズは Scale を掛けた値
+    Width           = 220           # Scale から算出されるため、保存用の控え
     Height          = 220
     Left            = $null         # $null = 未設定（初回は画面右上）。負の値も正当な座標
     Top             = $null
@@ -123,10 +102,9 @@ $script:OpacityMin = 0.15
 $script:OpacityMax = 0.90
 $script:MinHandGap = 10
 
-# スマート透過の減光率と、すり抜け中に守る不透明度の下限
+# スマート透過の減光率と、減光時に守る不透明度の下限
 $script:SmartOpacityFactor = 0.45
 $script:SmartOpacityMin = 0.25
-$script:ClickThroughMinOpacity = 0.35
 
 # ===== テーマ定義 =====
 $script:Themes = @{
@@ -169,8 +147,6 @@ function Load-Settings {
             if ($null -ne $json.Opacity) { $script:Settings.Opacity = [double]$json.Opacity }
             if ($null -ne $json.ShowSeconds) { $script:Settings.ShowSeconds = [bool]$json.ShowSeconds }
             if ($null -ne $json.SmartOpacity) { $script:Settings.SmartOpacity = [bool]$json.SmartOpacity }
-            if ($null -ne $json.ClickThrough) { $script:Settings.ClickThrough = [bool]$json.ClickThrough }
-            if ($null -ne $json.Topmost) { $script:Settings.Topmost = [bool]$json.Topmost }
             if ($null -ne $json.ShowDate) { $script:Settings.ShowDate = [bool]$json.ShowDate }
             if ($null -ne $json.ShowPlate) { $script:Settings.ShowPlate = [bool]$json.ShowPlate }
             if ($null -ne $json.Scale) { $script:Settings.Scale = [int]$json.Scale }
@@ -331,11 +307,13 @@ function Get-CurrentTheme {
 
 # ===== アナログ時計描画 =====
 function Draw-AnalogClock {
-    $analogCanvas.Children.Clear()
-
+    # Clear より先に判定する。逆にすると、レイアウト未確定のときに
+    # 消しただけで描き直さず、空の文字盤が残ってしまう
     $w = $analogCanvas.ActualWidth
     $h = $analogCanvas.ActualHeight
     if ($w -le 0 -or $h -le 0) { return }
+
+    $analogCanvas.Children.Clear()
 
     $cx = $w / 2.0
     $cy = $h / 2.0
@@ -448,26 +426,12 @@ function Update-DigitalClock {
 
 # ===== ウィンドウ透明度・クリック透過 =====
 function Apply-WindowOpacity {
-    if ($script:Settings.ClickThrough) {
-        # すり抜け中はマウスイベントが届かず MouseEnter による復帰ができない。
-        # ここで減光すると「見えない上に反応しない」状態になるため下限を強制する
-        $window.Opacity = [Math]::Max($script:ClickThroughMinOpacity, $script:Settings.Opacity)
-    } elseif ($script:Settings.SmartOpacity) {
+    if ($script:Settings.SmartOpacity) {
         # 減光しすぎると時計を見失い、復帰のためにホバーする場所が分からなくなる
         $window.Opacity = [Math]::Max($script:SmartOpacityMin, $script:Settings.Opacity * $script:SmartOpacityFactor)
     } else {
         $window.Opacity = $script:Settings.Opacity
     }
-}
-
-function Apply-ClickThrough {
-    try {
-        $helper = New-Object System.Windows.Interop.WindowInteropHelper($window)
-        $hwnd = $helper.Handle
-        if ($hwnd -ne [IntPtr]::Zero) {
-            [Win32]::SetClickThrough($hwnd, $script:Settings.ClickThrough)
-        }
-    } catch {}
 }
 
 # ===== モニタ単位の作業領域 =====
@@ -577,8 +541,8 @@ function Apply-DigitalHalo {
 }
 
 # ===== デジタル表示のサイズ合わせ =====
-# $exact = $false のときは「はみ出す場合のみ広げる」（ユーザーが決めたサイズを尊重）
-function Fit-DigitalWindow([bool]$exact = $false) {
+# ウィンドウを文字にぴったり合わせる（画面の隅へ寄せられるようにするため）
+function Fit-DigitalWindow {
     if ($script:Settings.Mode -ne "digital") { return }
     try {
         $inf = New-Object System.Windows.Size -ArgumentList ([double]::PositiveInfinity), ([double]::PositiveInfinity)
@@ -596,13 +560,8 @@ function Fit-DigitalWindow([bool]$exact = $false) {
     $needW = [Math]::Ceiling($rawW) + $script:HitPadX
     $needH = [Math]::Ceiling($rawH) + $script:HitPadY
 
-    $curW = if ([double]::IsNaN($window.Width)) { $window.ActualWidth } else { $window.Width }
-    $curH = if ([double]::IsNaN($window.Height)) { $window.ActualHeight } else { $window.Height }
-    $newW = if ($exact) { $needW } else { [Math]::Max($curW, $needW) }
-    $newH = if ($exact) { $needH } else { [Math]::Max($curH, $needH) }
-
-    $window.Width  = [Math]::Max($script:MinDigitalW, [Math]::Min(800, $newW))
-    $window.Height = [Math]::Max($script:MinDigitalH, [Math]::Min(800, $newH))
+    $window.Width  = [Math]::Max($script:MinDigitalW, [Math]::Min(800, $needW))
+    $window.Height = [Math]::Max($script:MinDigitalH, [Math]::Min(800, $needH))
     $script:Settings.Width  = [int]$window.Width
     $script:Settings.Height = [int]$window.Height
 }
@@ -645,7 +604,7 @@ function Apply-Scale {
         $digitalTime.FontSize = [Math]::Max(16, [Math]::Round($script:Settings.DigitalSize * $ratio))
         $digitalDate.FontSize = [Math]::Max(11, [Math]::Round($digitalTime.FontSize * 0.28))
         Apply-DigitalHalo
-        Fit-DigitalWindow $true
+        Fit-DigitalWindow
     }
     Apply-HitArea
 }
@@ -695,14 +654,12 @@ function Apply-Mode {
     Apply-Scale
     if ($script:Settings.Mode -eq "digital") { Apply-DigitalHalo }
 
-    # 秒針はアナログ専用。デジタルでは押しても効かないため無効化する
+    # モード専用の項目は、効かない側では選べないようにする
     if ($script:menuSeconds) { $script:menuSeconds.IsEnabled = ($script:Settings.Mode -eq "analog") }
     if ($script:menuDate)  { $script:menuDate.IsEnabled  = ($script:Settings.Mode -eq "digital") }
     if ($script:menuPlate) { $script:menuPlate.IsEnabled = ($script:Settings.Mode -eq "digital") }
 
-    $window.Topmost = $script:Settings.Topmost
     Apply-WindowOpacity
-    Apply-ClickThrough
 }
 
 # ===== タイマー & 省電力制御 =====
@@ -756,18 +713,6 @@ $contextMenu.Items.Add($menuDigital) | Out-Null
 
 $contextMenu.Items.Add((New-Object System.Windows.Controls.Separator)) | Out-Null
 
-# --- 最前面固定 ---
-$script:menuTopmost = New-Object System.Windows.Controls.MenuItem
-$script:menuTopmost.Header = "最前面に固定 (Ctrl+Shift+T)"
-$script:menuTopmost.IsCheckable = $true
-$script:menuTopmost.IsChecked = $script:Settings.Topmost
-$script:menuTopmost.Add_Click({
-    $script:Settings.Topmost = $script:menuTopmost.IsChecked
-    $window.Topmost = $script:Settings.Topmost
-    Save-Settings
-})
-$contextMenu.Items.Add($script:menuTopmost) | Out-Null
-
 # --- 秒針表示トグル ---
 $script:menuSeconds = New-Object System.Windows.Controls.MenuItem
 $script:menuSeconds.Header = "秒針を表示"
@@ -791,19 +736,6 @@ $script:menuSmartOp.Add_Click({
     Save-Settings
 })
 $contextMenu.Items.Add($script:menuSmartOp) | Out-Null
-
-# --- クリックすり抜けモード ---
-$script:menuClickThrough = New-Object System.Windows.Controls.MenuItem
-$script:menuClickThrough.Header = "クリックすり抜け (Ctrl+Shift+X)"
-$script:menuClickThrough.IsCheckable = $true
-$script:menuClickThrough.IsChecked = $false
-$script:menuClickThrough.Add_Click({
-    $script:Settings.ClickThrough = $script:menuClickThrough.IsChecked
-    Apply-ClickThrough
-    Apply-WindowOpacity
-    Save-Settings
-})
-$contextMenu.Items.Add($script:menuClickThrough) | Out-Null
 
 # --- 日付・曜日表示トグル ---
 $script:menuDate = New-Object System.Windows.Controls.MenuItem
@@ -1015,8 +947,6 @@ $menuReset.Add_Click({
     $script:Settings.Opacity = 0.85
     $script:Settings.ShowSeconds = $false
     $script:Settings.SmartOpacity = $false
-    $script:Settings.ClickThrough = $false
-    $script:Settings.Topmost = $true
     $script:Settings.ShowDate = $false
     $script:Settings.ShowPlate = $false
     $script:Settings.HourWidth = 4.0
@@ -1028,14 +958,11 @@ $menuReset.Add_Click({
     $script:Settings.DigitalSize = 64.0
     $script:Settings.Scale = 100
     # メニューのチェック状態を全て同期
-    if ($script:menuTopmost) { $script:menuTopmost.IsChecked = $true }
     if ($script:menuSeconds) { $script:menuSeconds.IsChecked = $false }
     if ($script:menuSmartOp) { $script:menuSmartOp.IsChecked = $false }
-    if ($script:menuClickThrough) { $script:menuClickThrough.IsChecked = $false }
     if ($script:menuDate) { $script:menuDate.IsChecked = $false }
     if ($script:menuPlate) { $script:menuPlate.IsChecked = $false }
     Apply-Mode
-    Apply-ClickThrough
     Snap-Window "top-right"
     Tick-Handler
     Save-Settings
@@ -1113,29 +1040,6 @@ $window.Add_MouseLeave({
     }
 })
 
-$window.Add_KeyDown({
-    param($sender, $e)
-    # Ctrl + Shift + X: クリック透過トグル
-    if (($e.KeyboardDevice.Modifiers -band [System.Windows.Input.ModifierKeys]::Control) -and 
-        ($e.KeyboardDevice.Modifiers -band [System.Windows.Input.ModifierKeys]::Shift) -and 
-        $e.Key -eq [System.Windows.Input.Key]::X) {
-        $script:Settings.ClickThrough = -not $script:Settings.ClickThrough
-        if ($script:menuClickThrough) { $script:menuClickThrough.IsChecked = $script:Settings.ClickThrough }
-        Apply-ClickThrough
-        Apply-WindowOpacity
-        Save-Settings
-    }
-    # Ctrl + Shift + T: 最前面固定トグル
-    if (($e.KeyboardDevice.Modifiers -band [System.Windows.Input.ModifierKeys]::Control) -and 
-        ($e.KeyboardDevice.Modifiers -band [System.Windows.Input.ModifierKeys]::Shift) -and 
-        $e.Key -eq [System.Windows.Input.Key]::T) {
-        $script:Settings.Topmost = -not $script:Settings.Topmost
-        $window.Topmost = $script:Settings.Topmost
-        if ($script:menuTopmost) { $script:menuTopmost.IsChecked = $script:Settings.Topmost }
-        Save-Settings
-    }
-})
-
 # ===== 起動前の初期化 =====
 # ShowDialog より前に確定させることで、別モードが一瞬見えたり
 # 既定位置に出てから移動したりするちらつきを防ぐ
@@ -1148,10 +1052,8 @@ $window.Height = $script:Settings.Height
 # 位置は DPI が判る SourceInitialized まで待つ（初回描画より前なのでちらつかない）
 Apply-Mode
 
-if ($script:menuTopmost) { $script:menuTopmost.IsChecked = $script:Settings.Topmost }
 if ($script:menuSeconds) { $script:menuSeconds.IsChecked = $script:Settings.ShowSeconds }
 if ($script:menuSmartOp) { $script:menuSmartOp.IsChecked = $script:Settings.SmartOpacity }
-if ($script:menuClickThrough) { $script:menuClickThrough.IsChecked = $script:Settings.ClickThrough }
 if ($script:menuDate) { $script:menuDate.IsChecked = $script:Settings.ShowDate }
 if ($script:menuPlate) { $script:menuPlate.IsChecked = $script:Settings.ShowPlate }
 if ($script:menuStartup) { $script:menuStartup.IsChecked = (Test-Path $startupLnk) }
@@ -1183,7 +1085,6 @@ $window.Add_Loaded({
     # レイアウト確定後にサイズを取り直し、位置と当たり判定を最終化する
     Apply-Scale
     Restore-WindowPosition
-    Apply-ClickThrough   # HWND が必要なためここで実行
     Apply-WindowOpacity
 
     $script:timer = New-Object System.Windows.Threading.DispatcherTimer
