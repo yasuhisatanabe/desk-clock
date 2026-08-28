@@ -690,26 +690,59 @@ function Tick-Handler {
 # ===== コンテキストメニュー =====
 $contextMenu = New-Object System.Windows.Controls.ContextMenu
 
+# 「どの選択肢が今の設定か」を示すチェックの対象。
+# @{ Items = 項目のコレクション; Key = Settings のキー } を登録しておき、
+# メニューを開いたときだけ一括で同期する（常駐中は何も動かない）
+$script:CheckGroups = @()
+
+function Register-CheckGroup($items, [string]$key) {
+    $script:CheckGroups += @{ Items = $items; Key = $key }
+}
+
+function Test-SameOption($a, $b) {
+    if ($null -eq $a -or $null -eq $b) { return $false }
+    if ($a -is [string] -or $b -is [string]) { return "$a" -eq "$b" }
+    return [Math]::Abs([double]$a - [double]$b) -lt 0.001
+}
+
+function Sync-MenuChecks {
+    foreach ($g in $script:CheckGroups) {
+        $cur = $script:Settings[$g.Key]
+        foreach ($item in $g.Items) {
+            if ($item -is [System.Windows.Controls.MenuItem]) {
+                $item.IsChecked = Test-SameOption $item.Tag $cur
+            }
+        }
+    }
+}
+
 # --- 表示モード ---
 $menuAnalog = New-Object System.Windows.Controls.MenuItem
 $menuAnalog.Header = "アナログ"
+$menuAnalog.Tag = "analog"
+$menuAnalog.IsCheckable = $true
 $menuAnalog.Add_Click({
     $script:Settings.Mode = "analog"
     Apply-Mode
     Tick-Handler
+    Sync-MenuChecks
     Save-Settings
 })
 $contextMenu.Items.Add($menuAnalog) | Out-Null
 
 $menuDigital = New-Object System.Windows.Controls.MenuItem
 $menuDigital.Header = "デジタル"
+$menuDigital.Tag = "digital"
+$menuDigital.IsCheckable = $true
 $menuDigital.Add_Click({
     $script:Settings.Mode = "digital"
     Apply-Mode
     Tick-Handler
+    Sync-MenuChecks
     Save-Settings
 })
 $contextMenu.Items.Add($menuDigital) | Out-Null
+Register-CheckGroup @($menuAnalog, $menuDigital) "Mode"
 
 $contextMenu.Items.Add((New-Object System.Windows.Controls.Separator)) | Out-Null
 
@@ -830,6 +863,7 @@ function New-OptionSubMenu {
         $item = New-Object System.Windows.Controls.MenuItem
         $item.Header = $opt.L
         $item.Tag = $opt.V
+        $item.IsCheckable = $true
         $item.Add_Click({
             param($s, $e)
             if ($ValueType -eq 'double') {
@@ -838,10 +872,12 @@ function New-OptionSubMenu {
                 $script:Settings[$SettingsKey] = [int]$s.Tag
             }
             if ($OnChange) { & $OnChange }
+            Sync-MenuChecks
             Save-Settings
         }.GetNewClosure())
         $sub.Items.Add($item) | Out-Null
     }
+    Register-CheckGroup $sub.Items $SettingsKey
     return $sub
 }
 
@@ -882,9 +918,11 @@ $menuDigitalSize.Header = "デジタル文字サイズ"
 foreach ($opt in @(@{L="小 (36px)";V=36}, @{L="標準 (64px)";V=64}, @{L="大 (96px)";V=96}, @{L="特大 (128px)";V=128})) {
     $item = New-Object System.Windows.Controls.MenuItem
     $item.Header = $opt.L; $item.Tag = $opt.V
-    $item.Add_Click({ param($s,$e) $script:Settings.DigitalSize = [double]$s.Tag; Apply-Mode; Save-Settings })
+    $item.IsCheckable = $true
+    $item.Add_Click({ param($s,$e) $script:Settings.DigitalSize = [double]$s.Tag; Apply-Mode; Sync-MenuChecks; Save-Settings })
     $menuDigitalSize.Items.Add($item) | Out-Null
 }
+Register-CheckGroup $menuDigitalSize.Items "DigitalSize"
 $contextMenu.Items.Add($menuDigitalSize) | Out-Null
 
 $contextMenu.Items.Add((New-Object System.Windows.Controls.Separator)) | Out-Null
@@ -893,21 +931,14 @@ $contextMenu.Items.Add((New-Object System.Windows.Controls.Separator)) | Out-Nul
 $menuTheme = New-Object System.Windows.Controls.MenuItem
 $menuTheme.Header = "カラーテーマ"
 
-$menuDark = New-Object System.Windows.Controls.MenuItem
-$menuDark.Header = "ダーク"
-$menuDark.Add_Click({ $script:Settings.Theme = "dark"; Apply-Mode; Tick-Handler; Save-Settings })
-$menuTheme.Items.Add($menuDark) | Out-Null
-
-$menuLight = New-Object System.Windows.Controls.MenuItem
-$menuLight.Header = "ライト"
-$menuLight.Add_Click({ $script:Settings.Theme = "light"; Apply-Mode; Tick-Handler; Save-Settings })
-$menuTheme.Items.Add($menuLight) | Out-Null
-
-$menuBlue = New-Object System.Windows.Controls.MenuItem
-$menuBlue.Header = "ブルー"
-$menuBlue.Add_Click({ $script:Settings.Theme = "blue"; Apply-Mode; Tick-Handler; Save-Settings })
-$menuTheme.Items.Add($menuBlue) | Out-Null
-
+foreach ($t in @(@{L="ダーク";V="dark"}, @{L="ライト";V="light"}, @{L="ブルー";V="blue"})) {
+    $item = New-Object System.Windows.Controls.MenuItem
+    $item.Header = $t.L; $item.Tag = $t.V
+    $item.IsCheckable = $true
+    $item.Add_Click({ param($s,$e) $script:Settings.Theme = [string]$s.Tag; Apply-Mode; Tick-Handler; Sync-MenuChecks; Save-Settings })
+    $menuTheme.Items.Add($item) | Out-Null
+}
+Register-CheckGroup $menuTheme.Items "Theme"
 $contextMenu.Items.Add($menuTheme) | Out-Null
 
 $contextMenu.Items.Add((New-Object System.Windows.Controls.Separator)) | Out-Null
@@ -926,14 +957,17 @@ $opacityValues = @(
 foreach ($ov in $opacityValues) {
     $mi = New-Object System.Windows.Controls.MenuItem
     $mi.Header = $ov.Label; $mi.Tag = $ov.Value
+    $mi.IsCheckable = $true
     $mi.Add_Click({
         param($sender, $e)
         $script:Settings.Opacity = [double]$sender.Tag
         Apply-WindowOpacity
+        Sync-MenuChecks
         Save-Settings
     })
     $menuOpacity.Items.Add($mi) | Out-Null
 }
+Register-CheckGroup $menuOpacity.Items "Opacity"
 $contextMenu.Items.Add($menuOpacity) | Out-Null
 
 $contextMenu.Items.Add((New-Object System.Windows.Controls.Separator)) | Out-Null
@@ -983,6 +1017,9 @@ $menuExit.Add_Click({
     $window.Close()
 })
 $contextMenu.Items.Add($menuExit) | Out-Null
+
+# 開いた瞬間にだけ現在値を反映する。常駐中は一切動かない
+$contextMenu.Add_Opened({ Sync-MenuChecks })
 
 $window.ContextMenu = $contextMenu
 
@@ -1062,7 +1099,10 @@ Tick-Handler
 
 # HWND 生成直後・初回描画前。ここで初めてモニタと DPI が判る
 $window.Add_SourceInitialized({
-    Restore-WindowPosition
+    # 起動時は前回のドラッグ位置ではなく必ず右上に置く。
+    # 参照するモニタは Settings.Left/Top（前回の位置）から決まるので、
+    # 別モニタで使っていた場合はそのモニタの右上になる
+    Snap-Window "top-right"
 
     # 解像度変更・モニタ着脱に追従する (WM_DISPLAYCHANGE)
     try {
@@ -1082,9 +1122,9 @@ $window.Add_SourceInitialized({
 })
 
 $window.Add_Loaded({
-    # レイアウト確定後にサイズを取り直し、位置と当たり判定を最終化する
+    # レイアウト確定後にサイズを取り直し、右上へ置き直す
     Apply-Scale
-    Restore-WindowPosition
+    Snap-Window "top-right"
     Apply-WindowOpacity
 
     $script:timer = New-Object System.Windows.Threading.DispatcherTimer
