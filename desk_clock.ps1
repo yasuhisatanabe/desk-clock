@@ -106,6 +106,14 @@ $script:MinHandGap = 10
 $script:SmartOpacityFactor = 0.45
 $script:SmartOpacityMin = 0.25
 
+# デジタル文字の縁取り（ハロー）1 枚あたりの広がり。文字サイズに対する比率と、
+# 小さい文字での下限 (px)。細いぼかしを重ねる前提の値で、広げると縁が薄く散る。
+# 上限は文字の外側に残る余白 (Border の Padding 4 + HitPad の片側 4) に収める。
+# 超えるとハローがウィンドウの縁で切られ、四角い切り口が見えてしまう
+$script:DigitalHaloRatio = 0.05
+$script:DigitalHaloMin   = 2.0
+$script:DigitalHaloMax   = 6.0
+
 # ===== テーマ定義 =====
 $script:Themes = @{
     dark = @{
@@ -236,24 +244,30 @@ $xaml = @"
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center"
                 Visibility="Collapsed">
-            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                <TextBlock x:Name="DigitalTime" 
-                           Text="00:00"
-                           FontSize="64"
-                           FontWeight="SemiBold"
-                           FontFamily="Segoe UI, Consolas"
-                           Typography.NumeralAlignment="Tabular"
-                           HorizontalAlignment="Center"/>
-                <TextBlock x:Name="DigitalDate" 
-                           Text="1月1日 (日)"
-                           FontSize="18"
-                           FontWeight="Normal"
-                           FontFamily="Segoe UI, Yu Gothic UI, Meiryo, MS Gothic"
-                           Opacity="0.7"
-                           HorizontalAlignment="Center"
-                           Margin="0,4,0,0"
-                           Visibility="Collapsed"/>
-            </StackPanel>
+            <!-- 文字自身とこの 2 枚のレイヤーで縁取りを 3 重に重ねる。
+                 1 枚だけではぼかしが薄く散り、白い背景の上で縁が消えてしまう -->
+            <Grid x:Name="DigitalHaloOuter" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Grid x:Name="DigitalHaloInner" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <TextBlock x:Name="DigitalTime"
+                                   Text="00:00"
+                                   FontSize="64"
+                                   FontWeight="SemiBold"
+                                   FontFamily="Segoe UI, Consolas"
+                                   Typography.NumeralAlignment="Tabular"
+                                   HorizontalAlignment="Center"/>
+                        <TextBlock x:Name="DigitalDate"
+                                   Text="1月1日 (日)"
+                                   FontSize="18"
+                                   FontWeight="Normal"
+                                   FontFamily="Segoe UI, Yu Gothic UI, Meiryo, MS Gothic"
+                                   Opacity="0.78"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,4,0,0"
+                                   Visibility="Collapsed"/>
+                    </StackPanel>
+                </Grid>
+            </Grid>
         </Border>
 
         <!-- 操作を受け付ける領域。Fill のアルファ 1 でヒットテストだけ有効にし視覚的には不可視 -->
@@ -274,6 +288,8 @@ $window = [System.Windows.Markup.XamlReader]::Parse($xaml)
 $mainGrid = $window.FindName("MainGrid")
 $analogCanvas = $window.FindName("AnalogCanvas")
 $digitalBorder = $window.FindName("DigitalBorder")
+$digitalHaloOuter = $window.FindName("DigitalHaloOuter")
+$digitalHaloInner = $window.FindName("DigitalHaloInner")
 $digitalTime = $window.FindName("DigitalTime")
 $digitalDate = $window.FindName("DigitalDate")
 $hitAnalog = $window.FindName("HitAnalog")
@@ -284,6 +300,18 @@ function Get-BrushFromHex([string]$hex) {
     try {
         $color = [System.Windows.Media.ColorConverter]::ConvertFromString($hex)
         return New-Object System.Windows.Media.SolidColorBrush($color)
+    } catch {
+        return [System.Windows.Media.Brushes]::Transparent
+    }
+}
+
+# 文字の下に回したハローが glyph を透けて上がってくると文字が濁るため、
+# デジタル文字だけはテーマの色相をそのまま使いつつ不透明にする
+function Get-OpaqueBrushFromHex([string]$hex) {
+    try {
+        $c = [System.Windows.Media.ColorConverter]::ConvertFromString($hex)
+        $opaque = [System.Windows.Media.Color]::FromRgb($c.R, $c.G, $c.B)
+        return New-Object System.Windows.Media.SolidColorBrush($opaque)
     } catch {
         return [System.Windows.Media.Brushes]::Transparent
     }
@@ -520,24 +548,42 @@ function Snap-Window([string]$pos) {
 
 # ===== デジタル文字の縁取り =====
 # 背景板を置かない設計のため、壁紙やテーマに関わらず読めるよう
-# 文字と逆の明度のハローを回して輪郭を立てる
+# 文字と逆の明度のハロー（影を四方に回したもの）で輪郭を立てる
+
+# 倍率変更のたびに生成し直さず、既存の Effect を更新する
+function Set-HaloEffect($element, $color, [double]$blurRadius) {
+    if ($null -eq $element) { return }
+    $eff = $element.Effect
+    if (-not ($eff -is [System.Windows.Media.Effects.DropShadowEffect])) {
+        $eff = New-Object System.Windows.Media.Effects.DropShadowEffect
+        $eff.ShadowDepth = 0
+        $eff.Opacity = 1.0
+        $element.Effect = $eff
+    }
+    $eff.Color = $color
+    $eff.BlurRadius = $blurRadius
+}
+
+# ぼかし 1 枚では縁の不透明度が半分ほどしか乗らず、白いウィンドウの上では
+# 明るい文字が背景に溶けてしまう。細いハローを 3 重に重ねて縁を濃くし、
+# 白い背景でも輪郭が残るようにする。
+# ハローは文字と逆の明度のため、暗い背景側の見た目はほとんど変わらない
 function Apply-DigitalHalo {
     $theme = Get-CurrentTheme
     $color = Get-ColorFromHex $theme.DigitalHalo
     foreach ($tb in @($digitalTime, $digitalDate)) {
-        # 倍率変更のたびに生成し直さず、既存の Effect を更新する
-        $eff = $tb.Effect
-        if (-not ($eff -is [System.Windows.Media.Effects.DropShadowEffect])) {
-            $eff = New-Object System.Windows.Media.Effects.DropShadowEffect
-            $eff.ShadowDepth = 0
-            $eff.Opacity = 1.0
-            $tb.Effect = $eff
-        }
-        $eff.Color = $color
-        # ぼかしを広げると輪郭が拡散して薄くなる。文字の縁に密度を集めて
-        # 白背景・黒背景のどちらでも輪郭が立つようにする
-        $eff.BlurRadius = [Math]::Max(2.5, $tb.FontSize * 0.07)
+        Set-HaloEffect $tb $color (Get-HaloBlur $tb.FontSize)
     }
+    # 重ねる 2 枚は文字を包むレイヤーに掛ける。日付の文字サイズは時刻に追従するため、
+    # 幅の基準は時刻側に合わせる
+    $outerBlur = Get-HaloBlur $digitalTime.FontSize
+    Set-HaloEffect $digitalHaloInner $color $outerBlur
+    Set-HaloEffect $digitalHaloOuter $color $outerBlur
+}
+
+function Get-HaloBlur([double]$fontSize) {
+    $blur = [Math]::Max($script:DigitalHaloMin, $fontSize * $script:DigitalHaloRatio)
+    return [Math]::Min($script:DigitalHaloMax, $blur)
 }
 
 # ===== デジタル表示のサイズ合わせ =====
@@ -647,8 +693,8 @@ function Apply-Mode {
         }
         $digitalBorder.BorderBrush = [System.Windows.Media.Brushes]::Transparent
         $digitalBorder.BorderThickness = New-Object System.Windows.Thickness(0)
-        $digitalTime.Foreground = Get-BrushFromHex $theme.HandHour
-        $digitalDate.Foreground = Get-BrushFromHex $theme.HandHour
+        $digitalTime.Foreground = Get-OpaqueBrushFromHex $theme.HandHour
+        $digitalDate.Foreground = Get-OpaqueBrushFromHex $theme.HandHour
         $digitalDate.Visibility = if ($script:Settings.ShowDate) { "Visible" } else { "Collapsed" }
     }
     Apply-Scale
